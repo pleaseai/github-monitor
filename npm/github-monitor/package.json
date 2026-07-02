@@ -1,6 +1,6 @@
 {
   "name": "@pleaseai/github-monitor",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Claude Code channel server streaming GitHub events into the session (Rust binary, npm-distributed).",
   "license": "MIT",
   "homepage": "https://github.com/pleaseai/github-monitor",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/pleaseai/github-monitor/compare/v0.1.2...v0.1.3) (2026-07-02)
+
+
+### Documentation
+
+* **worker:** update README for the standalone pleaseai/github-monitor repo ([0a12af6](https://github.com/pleaseai/github-monitor/commit/0a12af6d7f5d71a66cf1c9df6d1826a8dabf4949))
+
 ## [0.1.2](https://github.com/pleaseai/github-monitor/compare/v0.1.1...v0.1.2) (2026-07-02)
 
 

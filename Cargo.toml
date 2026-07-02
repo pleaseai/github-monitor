@@ -1,7 +1,7 @@
 [package]
 name = "github-monitor-channel"
 # x-release-please-version
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Claude Code channel server streaming GitHub events (PR, CI rollup, AI reviewer status, issues, comments) from a github-relay worker into the session"
 license = "MIT"
