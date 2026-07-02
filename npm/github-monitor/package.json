@@ -6,7 +6,7 @@
   "homepage": "https://github.com/pleaseai/github-monitor",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pleaseai/github-monitor.git"
+    "url": "git+https://github.com/pleaseai/github-monitor.git"
   },
   "bugs": {
     "url": "https://github.com/pleaseai/github-monitor/issues"
