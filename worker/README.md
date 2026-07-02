@@ -1,10 +1,12 @@
-# @repo/github-relay
+# github-relay worker
 
 GitHub webhook → WebSocket relay on Cloudflare Workers. Feeds real-time GitHub
-events (push/branch, PR, issue, review, check_run, workflow_run, …) to Claude
-Code's [Monitor tool](https://code.claude.com/docs/en/tools-reference#monitor-tool)
-`ws` source, replacing 60–600s `gh` CLI polling in `/please:babysit-pr` and
-`/review:apply-loop` with sub-second push delivery.
+events (push/branch, PR, issue, review, check_run, workflow_run, …) to consumers
+over a WebSocket, replacing slow `gh` CLI polling with sub-second push delivery.
+The primary consumer is the [`github-monitor` channel](../README.md) (the Rust
+binary in this repo), which bridges these frames into a Claude Code session;
+Claude Code's [Monitor tool](https://code.claude.com/docs/en/tools-reference#monitor-tool)
+`ws` source can also consume it directly.
 
 ## Architecture
 
@@ -12,20 +14,20 @@ Code's [Monitor tool](https://code.claude.com/docs/en/tools-reference#monitor-to
 GitHub webhook ──POST /hook/<channel>──▶ Worker ──▶ RelayServer (Durable Object, 1/channel)
   (HMAC verify → compact summary)                      │  SQLite ring buffer (last 200, replay)
                                                        ▼  WebSocket fan-out (hibernation)
-Claude Code Monitor ◀──wss /ws/<channel>?token=…──────┘
+channel / Monitor ◀──wss /ws/<channel>?token=…────────┘
 ```
 
 - **[PartyServer](https://github.com/cloudflare/partykit)** (Cloudflare's
   PartyKit library) with `hibernate: true` — idle connections cost zero DO
   duration; outgoing frames are free. Fits the Workers **free plan** (SQLite DOs).
-- **Compact summaries, never raw payloads** — Monitor turns each text frame
-  into one notification and kills watches on frames > 1 MiB.
+- **Compact summaries, never raw payloads** — one text frame per event; the
+  Monitor `ws` source turns each into one notification and kills watches on
+  frames > 1 MiB, so frames stay small.
 - **Reconnect replay** — every frame carries `seq`; reconnect with
   `?since=<seq>` and missed events (buffer: last 200 per channel) arrive as
   **one batched `{"event":"relay","action":"replay","events":[…]}` frame**
-  (one Monitor notification, per [DO WebSocket best practices](https://developers.cloudflare.com/durable-objects/best-practices/websockets/#batch-messages-to-reduce-overhead)).
-  Monitor ends the watch on socket close, so the consumer re-arms with the
-  last seen `seq`.
+  (per [DO WebSocket best practices](https://developers.cloudflare.com/durable-objects/best-practices/websockets/#batch-messages-to-reduce-overhead)).
+  A consumer that lost the socket re-arms with the last seen `seq`.
 - **Stateless auth** — per-channel token = `base64url(HMAC-SHA256(TOKEN_SECRET, "ws:" + channel))`.
   No token storage; rotate `TOKEN_SECRET` to revoke all.
 
@@ -43,7 +45,7 @@ Channel names: `[A-Za-z0-9_.-]{1,64}` — convention: `<owner>--<repo>`.
 ## Deploy
 
 ```bash
-cd workers/github-relay
+cd worker
 bunx wrangler login                     # once
 bunx wrangler secret put WEBHOOK_SECRET # GitHub webhook secret
 bunx wrangler secret put TOKEN_SECRET   # openssl rand -base64 32
@@ -121,8 +123,8 @@ curl -X POST -H "Authorization: Bearer $(gh auth token)" \
 # → {"token":"<exp>.<sig>","expiresAt":…}   (24h TTL)
 ```
 
-The [github-monitor channel plugin](../../plugins/github-monitor/README.md)
-does this exchange (and refresh) automatically.
+The [`github-monitor` channel](../README.md) does this exchange (and refresh)
+automatically.
 
 **Static token (fallback)** — derive locally from the worker's `TOKEN_SECRET`
 (for Monitor ws without gh, CI, etc.):
@@ -172,16 +174,15 @@ emits one derived frame:
   running, `done` = review comments ready to process, `failed` = the bot
   errored (never auto-retry). They never affect the CI `state`. Override the
   name patterns with the `AI_REVIEWER_PATTERNS` var (comma-separated
-  case-insensitive regexes; defaults mirror
-  `packages/watchers/src/classify-ci.ts`)
+  case-insensitive regexes; see `src/rollup.ts` for the defaults)
 - Checks that finish after a flush trigger a follow-up rollup with the full
   accumulated picture
 - Raw `check_run`/`status` frames are still stored and broadcast — a
   PR-scoped session simply excludes them:
   `?prs=42&events=ci_rollup,pull_request,pull_request_review,issue_comment`
 
-This is the recommended subscription shape for `/please:babysit-pr`-style
-consumers: one notification when CI settles, not one per check.
+This is the recommended subscription shape for PR-babysitting consumers: one
+notification when CI settles, not one per check.
 
 ## Event summary fields
 
@@ -207,10 +208,3 @@ API, then creates issues/comments and asserts the signed deliveries
 (`X-Hub-Signature-256`) come out of the WebSocket as summarized frames —
 including the `?since=` replay path. Everything runs on localhost; no
 network or GitHub account needed.
-
-## Integration plan (phase 2 — not yet wired)
-
-`packages/watchers/` keeps its `gh` polling loop as ground truth (webhook
-delivery is not guaranteed) but gains a **webhook wake**: the watcher opens
-this relay's WS and aborts its `sleepAbortable()` on any relevant frame,
-snapshotting immediately instead of waiting out the 60–600s cadence.
