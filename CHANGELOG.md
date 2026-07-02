@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/pleaseai/github-monitor/compare/v0.1.1...v0.1.2) (2026-07-02)
+
+
+### Features
+
+* **npm:** distribute the channel binary via npm (esbuild copy-over) ([7216991](https://github.com/pleaseai/github-monitor/commit/721699169de568675c95adca4033824d7f3c7064))
+
 ## [0.1.1](https://github.com/pleaseai/github-monitor/compare/v0.1.0...v0.1.1) (2026-07-02)
 
 
