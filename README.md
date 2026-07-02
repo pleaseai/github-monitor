@@ -38,6 +38,15 @@ github-monitor-channel --version
 This installs the `github-monitor-channel` binary onto your `PATH`. The Claude
 Code plugin (`.claude-plugin/plugin.json`) spawns it as a channel server.
 
+Or via npm (same prebuilt binary, esbuild-style copy-over so there is no Node
+process on the hot path):
+
+```bash
+npm install -g @pleaseai/github-monitor
+# or run without installing:
+npx @pleaseai/github-monitor --version
+```
+
 Prebuilt binaries are attached to each [GitHub release](https://github.com/pleaseai/github-monitor/releases)
 for macOS (arm64/x64), Linux (arm64/x64), and Windows (x64).
 

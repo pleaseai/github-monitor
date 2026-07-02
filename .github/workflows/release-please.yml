@@ -64,6 +64,61 @@ jobs:
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
 
+  # Copy the released binaries into per-platform npm packages and publish them
+  # plus the wrapper via npm Trusted Publishing (OIDC — no NPM_TOKEN, provenance
+  # generated automatically). Gated on the NPM_PUBLISH repo variable so releases
+  # stay green until the one-time npmjs.com trusted-publisher bootstrap is done:
+  # configure a trusted publisher (repo pleaseai/github-monitor, workflow
+  # release-please.yml) for the wrapper + each @pleaseai/github-monitor-<target>
+  # package, then set the repo variable NPM_PUBLISH=true.
+  publish-npm:
+    needs: [release-please, build-and-upload]
+    # always(): publish whatever targets reached the release even if one build
+    # leg failed. The generator is partial-matrix-tolerant.
+    if: ${{ always() && needs.release-please.outputs.release_created && vars.NPM_PUBLISH == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # This job only reads + publishes to npm; never pushes to git.
+          persist-credentials: false
+
+      # Trusted Publishing requires npm >= 11.5.1; ubuntu-latest ships npm 10.x.
+      # The global prefix (/usr/local) is root-owned, so installing needs sudo.
+      - name: Upgrade npm for Trusted Publishing
+        run: sudo npm install -g npm@latest
+
+      - name: Download released binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          mkdir -p assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'github-monitor-channel-*' --dir assets
+          ls -lh assets
+
+      - name: Generate platform packages
+        env:
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: node npm/scripts/generate-platform-packages.mjs "${RELEASE_TAG#v}" assets
+
+      # Trusted Publishing supplies auth via OIDC and generates provenance
+      # automatically, so no token or --provenance flag is needed. Platform
+      # packages first, then the wrapper (its optionalDependencies pin them).
+      - name: Publish to npm
+        run: |
+          set -e
+          for dir in npm/dist/@pleaseai__*; do
+            echo "publishing $dir"
+            npm publish "$dir" --access public
+          done
+          npm publish npm/dist/github-monitor --access public
+
   update-homebrew-formula:
     needs: [release-please, build-and-upload]
     # always(): the formula only needs the four darwin/linux assets; a windows

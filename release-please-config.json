@@ -66,6 +66,11 @@
           "type": "json",
           "path": ".claude-plugin/plugin.json",
           "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "npm/github-monitor/package.json",
+          "jsonpath": "$.version"
         }
       ]
     }

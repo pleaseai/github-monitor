@@ -1,0 +1,45 @@
+{
+  "name": "@pleaseai/github-monitor",
+  "version": "0.0.0",
+  "description": "Claude Code channel server streaming GitHub events into the session (Rust binary, npm-distributed).",
+  "license": "MIT",
+  "homepage": "https://github.com/pleaseai/github-monitor",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pleaseai/github-monitor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pleaseai/github-monitor/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "github",
+    "channel",
+    "websocket",
+    "mcp",
+    "ci",
+    "pull-request"
+  ],
+  "bin": {
+    "github-monitor-channel": "bin/github-monitor-channel.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "bin/github-monitor-channel.js",
+    "install.js",
+    "lib/resolve.js"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "optionalDependencies": {
+    "@pleaseai/github-monitor-darwin-arm64": "0.0.0",
+    "@pleaseai/github-monitor-darwin-x64": "0.0.0",
+    "@pleaseai/github-monitor-linux-arm64": "0.0.0",
+    "@pleaseai/github-monitor-linux-x64": "0.0.0",
+    "@pleaseai/github-monitor-win32-x64": "0.0.0"
+  }
+}

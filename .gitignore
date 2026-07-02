@@ -10,3 +10,4 @@ worker/.dev.vars
 # OS / editor
 .DS_Store
 *~
+npm/dist
