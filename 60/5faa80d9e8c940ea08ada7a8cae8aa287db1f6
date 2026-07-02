@@ -1,0 +1,40 @@
+npm/github-monitor/package.json
+  s_e09c7f808bee1d::t_3ee34d346c35c0 1-26,30,34-45
+  s_e09c7f808bee1d::t_c5c04d2a795ec5 27-29,31-33
+README.md
+  s_e09c7f808bee1d::t_e18568049e8df9 41-49
+release-please-config.json
+  s_e09c7f808bee1d::t_56dbf61f636fdf 69-73
+npm/github-monitor/lib/resolve.js
+  s_e09c7f808bee1d::t_a44eeb8785fcfd 1-131
+npm/github-monitor/install.js
+  s_e09c7f808bee1d::t_17b020f5ad56ef 1-96
+npm/github-monitor/bin/github-monitor-channel.js
+  s_e09c7f808bee1d::t_d04acb24efa880 1,13,17-27,30-36,54-55,57-59,96-98
+  s_e09c7f808bee1d::t_3231226b7baba4 2-12,14-16,28-29,37-53,56,60-95
+.github/workflows/release-please.yml
+  s_e09c7f808bee1d::t_291a40aa2ab6ff 67-121
+npm/README.md
+  s_e09c7f808bee1d::t_ce42692e9a6bef 1-65
+npm/scripts/generate-platform-packages.mjs
+  s_e09c7f808bee1d::t_0a9bd6737c68e7 94,96,101-102
+  s_e09c7f808bee1d::t_bbd91200aa84d3 1-93,95,97-100,103-107
+.gitignore
+  s_e09c7f808bee1d::t_a4d97c92f39cf6 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.9",
+  "base_commit_sha": "605faa80d9e8c940ea08ada7a8cae8aa287db1f6",
+  "prompts": {},
+  "sessions": {
+    "s_e09c7f808bee1d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3c39737c-45a4-486c-aad9-eb06494454d5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Minsu Lee <minsu.lee@pleaseai.dev>"
+    }
+  }
+}
