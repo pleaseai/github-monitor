@@ -1,0 +1,101 @@
+.claude-plugin/plugin.json
+  s_e09c7f808bee1d::t_de18084063fbf9 1-19
+.editorconfig
+  s_e09c7f808bee1d::t_ae4da8fd12f77b 1-15
+.github/ISSUE_TEMPLATE/bug_report.md
+  s_e09c7f808bee1d::t_0bb1fea8fc060e 1-31
+.github/ISSUE_TEMPLATE/config.yml
+  s_e09c7f808bee1d::t_d4a1d543af75c9 1-8
+.github/ISSUE_TEMPLATE/feature_request.md
+  s_e09c7f808bee1d::t_a06ee5233bc024 1-22
+.github/PULL_REQUEST_TEMPLATE.md
+  s_e09c7f808bee1d::t_a148482ad6bf02 1-17
+.gitignore
+  s_e09c7f808bee1d::t_519b176d37cdfd 1-12
+.worktreeinclude
+  s_e09c7f808bee1d::t_47899ec7783d90 1-12
+CODE_OF_CONDUCT.md
+  s_e09c7f808bee1d::t_52b742d8206acc 1-132
+Cargo.lock
+  s_e09c7f808bee1d::t_48dc49262b681d 1-1654
+LICENSE
+  s_e09c7f808bee1d::t_3bc7aa5cbd100c 1-21
+SECURITY.md
+  s_e09c7f808bee1d::t_d33d3dc32bc159 1-39
+mise.toml
+  s_e09c7f808bee1d::t_72ca172948dabf 1-35
+orca.yaml
+  s_e09c7f808bee1d::t_f00e1587ad0de7 1-12
+release-please-config.json
+  s_e09c7f808bee1d::t_c2a3679c75b45d 1-73
+rust-toolchain.toml
+  s_e09c7f808bee1d::t_66ee53c948b61f 1-4
+rustfmt.toml
+  s_e09c7f808bee1d::t_d7410013091b09 1-2
+src/exchange.rs
+  s_e09c7f808bee1d::t_4c37f49b736213 1-123
+src/frames.rs
+  s_e09c7f808bee1d::t_189c02ec2e7f31 1-270
+worker/.gitignore
+  s_e09c7f808bee1d::t_8c478d892e2a30 1-2
+worker/README.md
+  s_e09c7f808bee1d::t_3151c72de0724c 1-216
+worker/bun.lock
+  s_e09c7f808bee1d::t_6c6239b1714f0a 1-225
+worker/package.json
+  s_e09c7f808bee1d::t_177fc9f4735ff4 1-26
+worker/scripts/channel-token.ts
+  s_e09c7f808bee1d::t_fcf08352f9e901 1-44
+worker/src/auth.ts
+  s_e09c7f808bee1d::t_ea4e87fb24a65f 1-100
+worker/src/filter.ts
+  s_e09c7f808bee1d::t_11bf93a3010a8e 1-72
+worker/src/github-access.ts
+  s_e09c7f808bee1d::t_aa313a801bae7d 1-77
+worker/src/index.ts
+  s_e09c7f808bee1d::t_f5a8dd4b152ccb 1-146
+worker/src/relay-server.ts
+  s_e09c7f808bee1d::t_923d85ba821db2 1-242
+worker/src/rollup.ts
+  s_e09c7f808bee1d::t_2cd2ac7155e302 1-161
+worker/src/signature.ts
+  s_e09c7f808bee1d::t_0347f8dd749fb5 1-55
+worker/src/summarize.ts
+  s_e09c7f808bee1d::t_04f5ad49870abb 1-225
+worker/src/types.ts
+  s_e09c7f808bee1d::t_5cc9855d593e6a 1-94
+worker/tests/auth.test.ts
+  s_e09c7f808bee1d::t_5c6c6a366caf60 1-70
+worker/tests/e2e.emulate.test.ts
+  s_e09c7f808bee1d::t_45f897159ab0a4 1-296
+worker/tests/filter.test.ts
+  s_e09c7f808bee1d::t_8d5f9a7bd6d198 1-67
+worker/tests/github-access.test.ts
+  s_e09c7f808bee1d::t_c17bd18851c1f2 1-56
+worker/tests/rollup.test.ts
+  s_e09c7f808bee1d::t_3d12d6907e4347 1-141
+worker/tests/signature.test.ts
+  s_e09c7f808bee1d::t_394aa3c07bfc8b 1-47
+worker/tests/summarize.test.ts
+  s_e09c7f808bee1d::t_8bd1bdf8ccb65d 1-176
+worker/tsconfig.json
+  s_e09c7f808bee1d::t_82ca0a84384632 1-20
+worker/wrangler.jsonc
+  s_e09c7f808bee1d::t_fc60d8fead8ef1 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.9",
+  "base_commit_sha": "cc9e8dc36c5b225337403cc4322d5fc08d9343e3",
+  "prompts": {},
+  "sessions": {
+    "s_e09c7f808bee1d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3c39737c-45a4-486c-aad9-eb06494454d5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Minsu Lee <amond@amond.net>"
+    }
+  }
+}
