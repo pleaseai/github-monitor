@@ -290,13 +290,20 @@ async fn main() {
     let mut relay_expires: Option<i64> = None;
     let mut backoff_ms: u64 = 0;
 
-    // Ctrl-C / SIGTERM → exit.
+    // Ctrl-C / SIGTERM → exit. SIGTERM is unix-only; Windows has just Ctrl-C.
     tokio::spawn(async {
-        let mut term =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {},
-            _ = async { if let Some(t) = term.as_mut() { t.recv().await; } } => {},
+        #[cfg(unix)]
+        {
+            let mut term =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {},
+                _ = async { if let Some(t) = term.as_mut() { t.recv().await; } } => {},
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tokio::signal::ctrl_c().await;
         }
         std::process::exit(0);
     });
