@@ -1,0 +1,185 @@
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+name: release-please
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.PRIVATE_KEY }}
+
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # release-please's Rust strategy bumps Cargo.toml and the package's own
+      # Cargo.lock entry, but re-lock defensively so the tagged commit always
+      # builds with `cargo build --locked`. Scoped to our package (no external
+      # dep bumps). Only commits when Cargo.lock actually changed.
+      - name: Checkout release PR branch
+        if: ${{ steps.release.outputs.pr }}
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ fromJson(steps.release.outputs.pr).headBranchName }}
+
+      - name: Sync Cargo.lock
+        if: ${{ steps.release.outputs.pr }}
+        run: |
+          cargo update -p github-monitor-channel
+          if git diff --quiet Cargo.lock; then
+            echo "Cargo.lock already in sync"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add Cargo.lock
+            git commit -m "chore: sync Cargo.lock"
+            git push origin HEAD:${{ fromJson(steps.release.outputs.pr).headBranchName }}
+          fi
+
+  # Build the binaries and upload them to the release release-please created.
+  build-and-upload:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-rust.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+
+  update-homebrew-formula:
+    needs: [release-please, build-and-upload]
+    # always(): the formula only needs the four darwin/linux assets; a windows
+    # build failure shouldn't block it. Fails on its own if a core asset is missing.
+    if: ${{ always() && needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        id: app-token
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.PRIVATE_KEY }}
+          repositories: |
+            github-monitor
+            homebrew-tap
+
+      - name: Checkout homebrew-tap repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: pleaseai/homebrew-tap
+          token: ${{ steps.app-token.outputs.token }}
+          path: homebrew-tap
+
+      - name: Configure git
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update Formula
+        run: |
+          VERSION=${{ needs.release-please.outputs.tag_name }}
+          VERSION_NO_V=${VERSION#v}
+
+          # -f makes curl fail on a 404 instead of writing an HTML error page
+          # into the .sha256 file — so a missing core target hard-fails here
+          # rather than baking a corrupt checksum into the formula.
+          curl -fLsS -o darwin-x64.sha256 \
+            "https://github.com/${{ github.repository }}/releases/download/${VERSION}/github-monitor-channel-darwin-x64.sha256"
+          curl -fLsS -o darwin-arm64.sha256 \
+            "https://github.com/${{ github.repository }}/releases/download/${VERSION}/github-monitor-channel-darwin-arm64.sha256"
+          curl -fLsS -o linux-x64.sha256 \
+            "https://github.com/${{ github.repository }}/releases/download/${VERSION}/github-monitor-channel-linux-x64.sha256"
+          curl -fLsS -o linux-arm64.sha256 \
+            "https://github.com/${{ github.repository }}/releases/download/${VERSION}/github-monitor-channel-linux-arm64.sha256"
+
+          DARWIN_X64_SHA256=$(awk '{print $1}' darwin-x64.sha256)
+          DARWIN_ARM64_SHA256=$(awk '{print $1}' darwin-arm64.sha256)
+          LINUX_X64_SHA256=$(awk '{print $1}' linux-x64.sha256)
+          LINUX_ARM64_SHA256=$(awk '{print $1}' linux-arm64.sha256)
+
+          cd homebrew-tap
+          cat > github-monitor.rb << 'FORMULA_EOF'
+          class GithubMonitor < Formula
+            desc "Claude Code channel server streaming GitHub events into the session"
+            homepage "https://github.com/pleaseai/github-monitor"
+            version "VERSION_PLACEHOLDER"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/pleaseai/github-monitor/releases/download/vVERSION_PLACEHOLDER/github-monitor-channel-darwin-arm64"
+                sha256 "SHA256_DARWIN_ARM64_PLACEHOLDER"
+              else
+                url "https://github.com/pleaseai/github-monitor/releases/download/vVERSION_PLACEHOLDER/github-monitor-channel-darwin-x64"
+                sha256 "SHA256_DARWIN_X64_PLACEHOLDER"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/pleaseai/github-monitor/releases/download/vVERSION_PLACEHOLDER/github-monitor-channel-linux-arm64"
+                sha256 "SHA256_LINUX_ARM64_PLACEHOLDER"
+              else
+                url "https://github.com/pleaseai/github-monitor/releases/download/vVERSION_PLACEHOLDER/github-monitor-channel-linux-x64"
+                sha256 "SHA256_LINUX_X64_PLACEHOLDER"
+              end
+            end
+
+            def install
+              if OS.mac?
+                if Hardware::CPU.arm?
+                  bin.install "github-monitor-channel-darwin-arm64" => "github-monitor-channel"
+                else
+                  bin.install "github-monitor-channel-darwin-x64" => "github-monitor-channel"
+                end
+              else
+                if Hardware::CPU.arm?
+                  bin.install "github-monitor-channel-linux-arm64" => "github-monitor-channel"
+                else
+                  bin.install "github-monitor-channel-linux-x64" => "github-monitor-channel"
+                end
+              end
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/github-monitor-channel --version")
+            end
+          end
+          FORMULA_EOF
+
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION_NO_V}/g" github-monitor.rb
+          sed -i "s/SHA256_DARWIN_ARM64_PLACEHOLDER/${DARWIN_ARM64_SHA256}/" github-monitor.rb
+          sed -i "s/SHA256_DARWIN_X64_PLACEHOLDER/${DARWIN_X64_SHA256}/" github-monitor.rb
+          sed -i "s/SHA256_LINUX_ARM64_PLACEHOLDER/${LINUX_ARM64_SHA256}/" github-monitor.rb
+          sed -i "s/SHA256_LINUX_X64_PLACEHOLDER/${LINUX_X64_SHA256}/" github-monitor.rb
+
+          # Stage first, then check the staged diff so the very first run (formula
+          # absent from the tap) still commits the new file.
+          git add github-monitor.rb
+          if git diff --cached --quiet; then
+            echo "No changes to Formula"
+            exit 0
+          fi
+          git commit -m "chore: update github-monitor to ${VERSION}"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

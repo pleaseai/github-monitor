@@ -1,0 +1,26 @@
+{
+  "name": "github-relay-worker",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub webhook \u2192 WebSocket relay on Cloudflare Workers (Durable Objects + PartyServer) \u2014 feeds Claude Code's Monitor ws source",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "token": "bun run scripts/channel-token.ts"
+  },
+  "dependencies": {
+    "partyserver": "^0.5.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "@octokit/webhooks-types": "^7.6.1",
+    "@types/bun": "^1.2.16",
+    "emulate": "^0.8.0",
+    "typescript": "^5.5.4",
+    "wrangler": "^4.106.0"
+  },
+  "license": "MIT"
+}

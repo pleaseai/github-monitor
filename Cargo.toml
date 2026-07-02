@@ -1,0 +1,48 @@
+[package]
+name = "github-monitor-channel"
+# x-release-please-version
+version = "0.1.0"
+edition = "2021"
+description = "Claude Code channel server streaming GitHub events (PR, CI rollup, AI reviewer status, issues, comments) from a github-relay worker into the session"
+license = "MIT"
+homepage = "https://github.com/pleaseai/github-monitor"
+repository = "https://github.com/pleaseai/github-monitor"
+keywords = ["claude", "github", "channel", "websocket", "mcp"]
+categories = ["command-line-utilities", "development-tools"]
+publish = false
+
+[[bin]]
+name = "github-monitor-channel"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "io-std",
+  "io-util",
+  "process",
+  "time",
+  "signal",
+  "sync",
+] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"] }
+futures-util = { version = "0.3", default-features = false, features = [
+  "sink",
+  "std",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = [
+  "rustls-tls",
+  "json",
+] }
+url = "2"
+sha2 = "0.10"
+hex = "0.4"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1

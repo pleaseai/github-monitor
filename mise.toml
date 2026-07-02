@@ -1,0 +1,35 @@
+# mise.toml — PassionFactory standard toolchain.
+# Details: Skill("standards:dev-tooling")
+#
+# Rust-first repo (src/ is the channel binary) with a bun worker under worker/.
+# The Rust toolchain (channel, rustfmt, clippy) is owned by rust-toolchain.toml —
+# do not double-pin it here. Only node/bun are pinned via mise.
+
+[tools]
+node = "24"
+bun = "1.3.14"
+
+[tasks.fmt]
+description = "Check Rust formatting"
+run = "cargo fmt --all --check"
+
+[tasks.clippy]
+description = "Lint Rust (deny warnings)"
+run = "cargo clippy --all-targets --all-features -- -D warnings"
+
+[tasks.test]
+description = "Run Rust tests"
+run = "cargo test --workspace --locked"
+
+[tasks."worker:test"]
+description = "Typecheck + unit-test the relay worker"
+dir = "worker"
+run = [
+  "bun install",
+  "bun run typecheck",
+  "bun test tests/signature.test.ts tests/auth.test.ts tests/github-access.test.ts tests/summarize.test.ts tests/filter.test.ts tests/rollup.test.ts",
+]
+
+[tasks.check]
+description = "Full pre-commit gate (Rust fmt/clippy/test + worker)"
+depends = ["fmt", "clippy", "test", "worker:test"]

@@ -1,0 +1,12 @@
+# orca.yaml — setup script run when Orca creates a worktree.
+#
+# Toolchain: mise pins node/bun (mise.toml); the Rust channel is pinned by
+# rust-toolchain.toml.
+
+scripts:
+  setup: |
+    set -e
+    mise trust --quiet
+    mise install
+    mise exec -- bunx @pleaseai/worktreeinclude "$ORCA_ROOT_PATH" "$ORCA_WORKTREE_PATH"
+    mise exec -- bash -c 'cd worker && bun install --frozen-lockfile'

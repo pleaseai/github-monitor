@@ -1,0 +1,131 @@
+# Cross-compiled release builds for the github-monitor-channel binary.
+#
+# Runs two ways: manually (workflow_dispatch) for ad-hoc rebuilds, and as a
+# reusable workflow (workflow_call) invoked by release-please.yml on
+# release_created to build the binaries and upload them to the fresh release.
+#
+# The binary is pure Rust with rustls (no OpenSSL, no C deps), so every target
+# builds on a native runner — no cross toolchain or zig needed. Asset names are
+# github-monitor-channel-<os>-<arch>; the Homebrew formula consumes the four
+# darwin/linux-gnu assets.
+
+name: Release (Rust)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to upload assets to (e.g. v0.1.0). Blank = build only.'
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to upload assets to (e.g. v0.1.0).
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-rust-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # Apple Silicon
+            target: aarch64-apple-darwin
+            asset: github-monitor-channel-darwin-arm64
+          - os: macos-15-intel # Intel (macos-13 retired Dec 2025)
+            target: x86_64-apple-darwin
+            asset: github-monitor-channel-darwin-x64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: github-monitor-channel-linux-x64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: github-monitor-channel-linux-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: github-monitor-channel-windows-x64.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # rust-toolchain.toml pins the toolchain; rustup honors it. Add the target
+      # triple so cross-target builds resolve their std.
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Stage asset (unix)
+        if: ${{ !startsWith(matrix.os, 'windows') }}
+        run: |
+          cp "target/${{ matrix.target }}/release/github-monitor-channel" "${{ matrix.asset }}"
+          ./${{ matrix.asset }} --version
+          shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+
+      - name: Stage asset (windows)
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        shell: bash
+        run: |
+          cp "target/${{ matrix.target }}/release/github-monitor-channel.exe" "${{ matrix.asset }}"
+          ./${{ matrix.asset }} --version
+          sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            ${{ matrix.asset }}
+            ${{ matrix.asset }}.sha256
+
+  # Runs even if some build legs failed (always()), so the targets that did
+  # build still reach the release. Fails only if nothing built.
+  upload-release-assets:
+    needs: build
+    if: ${{ always() && inputs.tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \; 2>/dev/null || true
+          count=$(find release -type f | wc -l | tr -d ' ')
+          echo "staged $count asset file(s):"
+          ls -lh release/ || true
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no built assets to upload — every build leg failed" >&2
+            exit 1
+          fi
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Validate the tag format before use so an untrusted dispatch input
+          # can't inject shell into the run step.
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Invalid release tag format: $RELEASE_TAG" >&2
+            exit 1
+          }
+          gh release upload "$RELEASE_TAG" release/* --clobber

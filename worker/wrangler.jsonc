@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "github-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RELAY",
+        "class_name": "RelayServer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RelayServer"]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+  // Secrets (wrangler secret put <NAME>):
+  //   WEBHOOK_SECRET — GitHub webhook HMAC secret (X-Hub-Signature-256)
+  //   TOKEN_SECRET   — master secret for deriving per-channel WS tokens
+}

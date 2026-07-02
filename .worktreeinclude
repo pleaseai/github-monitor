@@ -1,0 +1,12 @@
+# .worktreeinclude — files to copy into an Orca/conductor worktree.
+# .gitignore syntax. Only files that match a pattern AND are gitignored get copied.
+
+# Root environment variables
+.env
+.env.*
+
+# Worker dev secrets (WEBHOOK_SECRET / TOKEN_SECRET)
+worker/.dev.vars
+
+# Claude Code local settings
+.claude/settings.local.json
