@@ -1,6 +1,6 @@
 {
   "name": "github-monitor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Claude Code channel (research preview) that streams real-time GitHub events — PR, CI rollup, AI reviewer status, issues, comments — from a github-relay worker into the session. One-way push over a WebSocket with automatic reconnect and seq-cursor replay. Install the channel binary with `brew install pleaseai/tap/github-monitor`; requires GITHUB_RELAY_WS_URL and --dangerously-load-development-channels (or org allowedChannelPlugins).",
   "keywords": [
     "github",
