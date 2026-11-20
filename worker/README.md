@@ -31,6 +31,11 @@ channel / Monitor ◀──wss /ws/<channel>?token=…────────�
   buffer no longer reaches back to `since + 1`, the replay frame also carries
   `"gap":{"from":…,"to":…}` for the trimmed seqs (and is sent even if no
   buffered event matches the connection's filters).
+- **Redelivery dedupe** — a delivery whose `X-GitHub-Delivery` GUID the
+  channel already stored (a GitHub redelivery) is dropped: not stored, not
+  sent, and answered with `"duplicate": true`. GUIDs are kept for 8 days,
+  past GitHub's redelivery window (3 days, 7 on GHES), in a table separate
+  from the event buffer so trimming events does not forget them.
 - **Stateless auth** — per-channel token = `base64url(HMAC-SHA256(TOKEN_SECRET, "ws:" + channel))`.
   No token storage; rotate `TOKEN_SECRET` to revoke all.
 

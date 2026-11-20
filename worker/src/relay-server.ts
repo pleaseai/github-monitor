@@ -34,6 +34,8 @@ interface RollupRow {
 }
 
 const ROLLUP_MAX_AGE_MS = 24 * 60 * 60 * 1000
+// GitHub allows redelivery for 3 days (7 on GHES); keep GUIDs past both.
+const DELIVERY_RETENTION_MS = 8 * 24 * 60 * 60 * 1000
 
 export class RelayServer extends Server<Env> {
   static options = { hibernate: true }
@@ -46,6 +48,14 @@ export class RelayServer extends Server<Env> {
         body TEXT NOT NULL
       )
     `
+    this.sql`
+      CREATE TABLE IF NOT EXISTS deliveries (
+        guid TEXT PRIMARY KEY,
+        seq INTEGER NOT NULL,
+        received_at INTEGER NOT NULL
+      )
+    `
+    this.sql`CREATE INDEX IF NOT EXISTS deliveries_received_at ON deliveries (received_at)`
     this.sql`
       CREATE TABLE IF NOT EXISTS ci_rollups (
         sha TEXT PRIMARY KEY,
@@ -61,11 +71,25 @@ export class RelayServer extends Server<Env> {
   /**
    * RPC entry called by the worker for each verified webhook delivery.
    * Assigns a sequence number, persists, trims the buffer, fans out.
+   * A delivery GUID the channel already stored is dropped, so a GitHub
+   * redelivery is neither stored nor sent again.
    * Granular CI events additionally feed the debounced ci_rollup.
    */
-  async publish(eventJson: string): Promise<{ seq: number, delivered: number }> {
+  async publish(eventJson: string): Promise<{ seq: number, delivered: number, duplicate?: true }> {
     const event = JSON.parse(eventJson) as RelayEvent
+    const guid = event.delivery
+    if (guid !== undefined) {
+      const seen = this.sql<{ seq: number }>`SELECT seq FROM deliveries WHERE guid = ${guid}`[0]
+      if (seen) {
+        return { seq: seen.seq, delivered: 0, duplicate: true }
+      }
+    }
     const result = this.#store(event)
+    if (guid !== undefined) {
+      const now = Date.now()
+      this.sql`INSERT INTO deliveries (guid, seq, received_at) VALUES (${guid}, ${result.seq}, ${now})`
+      this.sql`DELETE FROM deliveries WHERE received_at < ${now - DELIVERY_RETENTION_MS}`
+    }
     if (isCiSourceEvent(event)) {
       await this.#trackCi(event)
     }

@@ -40,7 +40,7 @@ export interface RelayEvent {
   repo?: string
   /** sender.login. */
   sender?: string
-  /** X-GitHub-Delivery header (GUID). */
+  /** X-GitHub-Delivery header (GUID). The relay drops a GUID it already stored. */
   delivery?: string
   /** ISO timestamp assigned by the relay on receipt. */
   ts: string

@@ -47,7 +47,7 @@ async function githubApi(path: string, body?: unknown): Promise<Record<string, u
 }
 
 /** POST a signed webhook straight to the relay (bypasses the emulator). */
-async function postSignedHook(eventName: string, payload: Record<string, unknown>): Promise<void> {
+async function postSignedHook(eventName: string, payload: Record<string, unknown>, delivery?: string): Promise<Record<string, unknown>> {
   const body = JSON.stringify(payload)
   const response = await fetch(`http://127.0.0.1:${RELAY_PORT}/hook/${CHANNEL}`, {
     method: 'POST',
@@ -55,10 +55,12 @@ async function postSignedHook(eventName: string, payload: Record<string, unknown
       'Content-Type': 'application/json',
       'X-GitHub-Event': eventName,
       'X-Hub-Signature-256': await signBody(WEBHOOK_SECRET, body),
+      ...(delivery === undefined ? {} : { 'X-GitHub-Delivery': delivery }),
     },
     body,
   })
   expect(response.status).toBe(202)
+  return await response.json() as Record<string, unknown>
 }
 
 async function waitForFrame(predicate: (event: Record<string, unknown>) => boolean, timeoutMs = 5000): Promise<Record<string, unknown>> {
@@ -260,6 +262,37 @@ describe('e2e: github emulator → relay → websocket', () => {
     const prEvents = events.filter(e => e.event === 'pull_request')
     expect(prEvents).toHaveLength(1)
     expect(prEvents[0]?.number).toBe(42)
+    scoped.close()
+  }, 10_000)
+
+  test('a redelivered webhook (same X-GitHub-Delivery) is stored and sent once', async () => {
+    const token = await deriveChannelToken(TOKEN_SECRET, CHANNEL)
+    const scoped = new WebSocket(`ws://127.0.0.1:${RELAY_PORT}/ws/${CHANNEL}?token=${token}&prs=61&events=pull_request`)
+    const scopedFrames: string[] = []
+    scoped.onmessage = message => scopedFrames.push(String(message.data))
+    await new Promise<void>((resolve, reject) => {
+      scoped.onopen = () => resolve()
+      scoped.onerror = () => reject(new Error('scoped ws connect failed'))
+    })
+
+    const payload = {
+      action: 'synchronize',
+      number: 61,
+      pull_request: { number: 61, title: 'redelivered', state: 'open', head: { ref: 'redeliver', sha: 'z' } },
+      repository: { full_name: `${OWNER}/${REPO}` },
+    }
+    const delivery = `e2e-redelivery-${Date.now()}`
+    const first = await postSignedHook('pull_request', payload, delivery)
+    const second = await postSignedHook('pull_request', payload, delivery)
+    await Bun.sleep(600)
+
+    expect(first.duplicate).toBeUndefined()
+    expect(second).toMatchObject({ duplicate: true, delivered: 0, seq: first.seq })
+    const prEvents = scopedFrames
+      .map(f => JSON.parse(f) as Record<string, unknown>)
+      .filter(e => e.event === 'pull_request')
+    expect(prEvents).toHaveLength(1)
+    expect(prEvents[0]?.seq).toBe(first.seq)
     scoped.close()
   }, 10_000)
 
