@@ -56,6 +56,12 @@ export class RelayServer extends Server<Env> {
       )
     `
     this.sql`CREATE INDEX IF NOT EXISTS deliveries_received_at ON deliveries (received_at)`
+    // Seed GUIDs of events buffered before the deliveries table existed.
+    this.sql`
+      INSERT OR IGNORE INTO deliveries (guid, seq, received_at)
+      SELECT json_extract(body, '$.delivery'), seq, ${Date.now()} FROM events
+      WHERE json_extract(body, '$.delivery') IS NOT NULL
+    `
     this.sql`
       CREATE TABLE IF NOT EXISTS ci_rollups (
         sha TEXT PRIMARY KEY,
