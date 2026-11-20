@@ -109,12 +109,14 @@ export interface RelayEvent {
   epoch?: string
   /**
    * Present only on `relay`/`replay` frames when the reconnect's `?epoch=`
-   * no longer matches: the client's cursor belonged to storage epoch `epoch`,
-   * which no longer exists. Events after seq `since` in it may have been lost
-   * and cannot be replayed; the replay restarts from the new storage.
+   * no longer matches, or its `?since=` is ahead of the current storage: the
+   * client's cursor belonged to storage epoch `epoch` (absent when the client
+   * sent none), which no longer exists. Events after seq `since` in it may
+   * have been lost and cannot be replayed; the replay restarts from the new
+   * storage.
    */
   reset?: {
-    epoch: string
+    epoch?: string
     since: number
   }
 }

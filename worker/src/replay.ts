@@ -14,7 +14,7 @@ export function trimGap(since: number, minSeq: number | null): ReplayGap | undef
 }
 
 export interface ReplayReset {
-  epoch: string
+  epoch?: string
   since: number
 }
 
@@ -34,7 +34,8 @@ export function replayFrame({ since, missed, minSeq, ts, epoch, reset }: ReplayF
   }
   const parts = [`${missed.length} event(s) since seq ${since}`]
   if (reset) {
-    parts.unshift(`relay storage reset; events after seq ${reset.since} in epoch ${reset.epoch} may be lost`)
+    const from = reset.epoch === undefined ? '' : ` in epoch ${reset.epoch}`
+    parts.unshift(`relay storage reset; events after seq ${reset.since}${from} may be lost`)
   }
   if (gap) {
     parts.push(`seq ${gap.from}-${gap.to} trimmed from the buffer`)

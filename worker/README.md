@@ -38,8 +38,9 @@ channel / Monitor ◀──wss /ws/<channel>?token=…────────�
   replays the whole buffer and the replay frame carries
   `"reset":{"epoch":<old>,"since":<seq>}`: events after `since` in the old
   epoch may have been lost (the frame is sent even if no buffered event
-  matches). Without `?epoch=` the relay cannot detect a wipe and replays from
-  `since` as before.
+  matches). A `since` above the current `seq` also proves a wipe, so it gets
+  the same reset (without `epoch`) even when no `?epoch=` was sent; otherwise a
+  client without `?epoch=` replays from `since` as before.
 - **Redelivery dedupe** — a delivery whose `X-GitHub-Delivery` GUID the
   channel already stored (a GitHub redelivery) is dropped: not stored, not
   sent, and answered with `"duplicate": true`. GUIDs are kept for 8 days,

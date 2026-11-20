@@ -134,12 +134,17 @@ pub fn handle_frame(frame_text: &str, cursor: i64, epoch: Option<&str>) -> Frame
 
     if event_name == "relay" {
         let frame_epoch = str_field(&event, "epoch");
+        let action = event.get("action").and_then(Value::as_str);
+        // A hello seq below the cursor can only follow a storage wipe.
+        let hello_behind =
+            action == Some("connected") && seq_of(&event).is_some_and(|s| s < cursor);
         let base = match (epoch, frame_epoch.as_deref()) {
+            _ if event.get("reset").is_some() => 0,
             (Some(ours), Some(theirs)) if ours != theirs => 0,
+            (None, _) if hello_behind => 0,
             _ => cursor,
         };
         let new_epoch = frame_epoch.or_else(|| epoch.map(str::to_owned));
-        let action = event.get("action").and_then(Value::as_str);
         if action == Some("replay") {
             if let Some(inner) = event.get("events").and_then(Value::as_array) {
                 let mut refs: Vec<&Value> = vec![&event];
@@ -385,10 +390,33 @@ mod tests {
 
     #[test]
     fn missing_client_epoch_adopts_frame_epoch_and_keeps_max() {
+        let frame = r#"{"v":1,"event":"relay","action":"connected","seq":50,"epoch":"e1"}"#;
+        let result = handle_frame(frame, 40, None);
+        assert_eq!(result.cursor, 50);
+        assert_eq!(result.epoch.as_deref(), Some("e1"));
+    }
+
+    #[test]
+    fn missing_client_epoch_with_hello_behind_cursor_resets_cursor() {
         let frame = r#"{"v":1,"event":"relay","action":"connected","seq":3,"epoch":"e1"}"#;
         let result = handle_frame(frame, 40, None);
-        assert_eq!(result.cursor, 40);
+        assert_eq!(result.cursor, 3);
         assert_eq!(result.epoch.as_deref(), Some("e1"));
+    }
+
+    #[test]
+    fn reset_replay_without_client_epoch_resets_cursor() {
+        let frame = r#"{"v":1,"event":"relay","action":"replay","epoch":"e1","reset":{"since":40},"events":[{"v":1,"event":"issues","seq":2}]}"#;
+        let result = handle_frame(frame, 40, None);
+        assert_eq!(result.cursor, 2);
+        assert_eq!(result.epoch.as_deref(), Some("e1"));
+        assert_eq!(
+            result.notifications[0]
+                .meta
+                .get("event")
+                .map(String::as_str),
+            Some("reset")
+        );
     }
 
     #[test]

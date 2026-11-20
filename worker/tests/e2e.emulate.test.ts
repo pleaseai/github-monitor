@@ -357,7 +357,14 @@ describe('e2e: github emulator → relay → websocket', () => {
     const again = current.find(e => e.event === 'relay' && e.action === 'replay')
     const againSeqs = ((again?.events as Record<string, unknown>[] | undefined) ?? []).map(e => e.seq)
     expect(againSeqs).not.toContain(since)
-  }, 15_000)
+
+    const ahead = (hello?.seq as number) + 1000
+    const legacy = await connectUntilHello(`since=${ahead}`)
+    const legacyBatch = legacy.find(e => e.event === 'relay' && e.action === 'replay')
+    expect(legacyBatch?.reset).toEqual({ since: ahead })
+    const legacySeqs = ((legacyBatch?.events as Record<string, unknown>[] | undefined) ?? []).map(e => e.seq)
+    expect(legacySeqs).toContain(since)
+  }, 20_000)
 
   test('POST /auth exchanges a GitHub token for a working expiring WS token', async () => {
     // The relay verifies repo access against the (emulated) GitHub API.

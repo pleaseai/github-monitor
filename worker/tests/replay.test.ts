@@ -67,6 +67,12 @@ describe('replayFrame', () => {
     expect(frame?.events?.map(e => e.seq)).toEqual([5])
   })
 
+  test('a reset for a client that sent no epoch omits the old epoch', () => {
+    const frame = replayFrame({ since: 0, missed: [], minSeq: null, ts, epoch, reset: { since: 40 } })
+    expect(frame?.reset).toEqual({ since: 40 })
+    expect(frame?.preview).not.toContain('in epoch')
+  })
+
   test('omits the reset field when the epoch matched', () => {
     const frame = replayFrame({ since: 2, missed: [event(3)], minSeq: 3, ts, epoch })
     expect(frame).toBeDefined()

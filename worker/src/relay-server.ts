@@ -220,7 +220,9 @@ export class RelayServer extends Server<Env> {
 
     if (sinceParam !== null && /^\d+$/.test(sinceParam)) {
       const clientSince = Number(sinceParam)
-      const mismatch = epochParam !== null && epochParam !== this.#epoch
+      // Within one storage lastSeq never drops below a seq a client has seen,
+      // so a cursor ahead of it proves a wipe even without ?epoch=.
+      const mismatch = (epochParam !== null && epochParam !== this.#epoch) || clientSince > lastSeq
       const since = mismatch ? 0 : clientSince
       const rows = this.sql<EventRow>`
         SELECT seq, body FROM events WHERE seq > ${since} ORDER BY seq ASC
@@ -237,7 +239,7 @@ export class RelayServer extends Server<Env> {
         minSeq: this.#minSeq(),
         ts: new Date().toISOString(),
         epoch: this.#epoch,
-        ...(mismatch ? { reset: { epoch: epochParam, since: clientSince } } : {}),
+        ...(mismatch ? { reset: { since: clientSince, ...(epochParam !== null ? { epoch: epochParam } : {}) } } : {}),
       })
       if (batch) {
         connection.send(JSON.stringify(batch))
