@@ -31,6 +31,15 @@ channel / Monitor ◀──wss /ws/<channel>?token=…────────�
   buffer no longer reaches back to `since + 1`, the replay frame also carries
   `"gap":{"from":…,"to":…}` for the trimmed seqs (and is sent even if no
   buffered event matches the connection's filters).
+- **Storage epoch** — hello and replay frames carry `"epoch":"<id>"`, a
+  random id minted when the channel's storage is created. A storage wipe
+  restarts `seq` at 1 under a new epoch. Reconnect with
+  `?since=<seq>&epoch=<epoch>`; if the epoch no longer matches, the relay
+  replays the whole buffer and the replay frame carries
+  `"reset":{"epoch":<old>,"since":<seq>}`: events after `since` in the old
+  epoch may have been lost (the frame is sent even if no buffered event
+  matches). Without `?epoch=` the relay cannot detect a wipe and replays from
+  `since` as before.
 - **Redelivery dedupe** — a delivery whose `X-GitHub-Delivery` GUID the
   channel already stored (a GitHub redelivery) is dropped: not stored, not
   sent, and answered with `"duplicate": true`. GUIDs are kept for 8 days,
@@ -44,7 +53,7 @@ channel / Monitor ◀──wss /ws/<channel>?token=…────────�
 | Route                  | Description                                                                                                                                                                                                                                                                                                                    |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `POST /hook/<channel>` | GitHub webhook receiver. Verifies `X-Hub-Signature-256` against `WEBHOOK_SECRET`, summarizes, broadcasts.                                                                                                                                                                                                                      |
-| `GET /ws/<channel>`    | WebSocket for consumers. Auth: `?token=<token>` **or** subprotocols `["github-relay.v1", "<token>"]`. Options: `?since=<seq>` (replay); server-side filters `?events=`, `?repos=`, `?prs=` (AND-combined).                                                                                                                     |
+| `GET /ws/<channel>`    | WebSocket for consumers. Auth: `?token=<token>` **or** subprotocols `["github-relay.v1", "<token>"]`. Options: `?since=<seq>` (replay), `?epoch=<id>` (storage-reset check); server-side filters `?events=`, `?repos=`, `?prs=` (AND-combined).                                                                                |
 | `POST /auth/<channel>` | Token exchange. `Authorization: Bearer <github token>` that can read the channel's repo (`<owner>--<repo>`) or is an active member of the org (`<org>`) yields `{token, expiresAt}` — a short-lived WS token (TTL `AUTH_TOKEN_TTL_SECONDS`, default 24h). The GitHub token is verified against `GITHUB_API_URL` and discarded. |
 | `GET /health`          | Liveness probe.                                                                                                                                                                                                                                                                                                                |
 
@@ -157,8 +166,8 @@ Each event arrives as one JSON frame:
 {"v":1,"event":"check_run","action":"completed","repo":"acme/widgets","name":"ci/test","state":"failure","number":42,"seq":17,"ts":"…"}
 ```
 
-The first frame after connect is `{"event":"relay","action":"connected","seq":<cursor>}` —
-store `seq` and reconnect with `?since=<seq>` to catch up after a disconnect.
+The first frame after connect is `{"event":"relay","action":"connected","seq":<cursor>,"epoch":"<id>"}` —
+store `seq` and `epoch` and reconnect with `?since=<seq>&epoch=<id>` to catch up after a disconnect.
 
 ## CI rollup (derived `ci_rollup` event)
 

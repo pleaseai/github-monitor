@@ -40,7 +40,13 @@ const DELIVERY_RETENTION_MS = 8 * 24 * 60 * 60 * 1000
 export class RelayServer extends Server<Env> {
   static options = { hibernate: true }
 
+  #epoch = ''
+
   onStart(): void {
+    // A storage wipe drops this table, so the next start mints a new epoch.
+    this.sql`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`
+    this.sql`INSERT OR IGNORE INTO meta (key, value) VALUES ('epoch', ${crypto.randomUUID()})`
+    this.#epoch = this.sql<{ value: string }>`SELECT value FROM meta WHERE key = 'epoch'`[0]?.value ?? ''
     this.sql`
       CREATE TABLE IF NOT EXISTS events (
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,9 +217,12 @@ export class RelayServer extends Server<Env> {
 
     const lastSeq = this.#lastSeq()
     const sinceParam = url.searchParams.get('since')
+    const epochParam = url.searchParams.get('epoch')
 
     if (sinceParam !== null && /^\d+$/.test(sinceParam)) {
-      const since = Number(sinceParam)
+      const clientSince = Number(sinceParam)
+      const mismatch = epochParam !== null && epochParam !== this.#epoch
+      const since = mismatch ? 0 : clientSince
       const rows = this.sql<EventRow>`
         SELECT seq, body FROM events WHERE seq > ${since} ORDER BY seq ASC
       `
@@ -223,21 +232,29 @@ export class RelayServer extends Server<Env> {
       const missed = rows
         .map(row => parseStoredEvent(row.body))
         .filter(event => matchesFilter(connection.state, event))
-      const batch = replayFrame(since, missed, this.#minSeq(), new Date().toISOString())
+      const batch = replayFrame({
+        since,
+        missed,
+        minSeq: this.#minSeq(),
+        ts: new Date().toISOString(),
+        epoch: this.#epoch,
+        ...(mismatch ? { reset: { epoch: epochParam, since: clientSince } } : {}),
+      })
       if (batch) {
         connection.send(JSON.stringify(batch))
       }
     }
 
-    // Hello frame: tells the client the current cursor so it can resume
-    // with ?since=<seq> after a disconnect even if no events arrive.
+    // Hello frame: tells the client the current cursor and storage epoch so
+    // it can resume with ?since=<seq>&epoch=<epoch> even if no events arrive.
     const hello: RelayEvent = {
       v: 1,
       event: 'relay',
       action: 'connected',
       seq: lastSeq,
+      epoch: this.#epoch,
       ts: new Date().toISOString(),
-      preview: `channel ${this.name} connected (resume with ?since=${lastSeq})`,
+      preview: `channel ${this.name} connected (resume with ?since=${lastSeq}&epoch=${this.#epoch})`,
     }
     connection.send(JSON.stringify(hello))
   }

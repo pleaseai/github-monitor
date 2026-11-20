@@ -101,4 +101,20 @@ export interface RelayEvent {
     from: number
     to: number
   }
+  /**
+   * Storage epoch id — present on `relay` hello and replay frames. It changes
+   * when the relay's storage is wiped and seq restarts at 1; reconnect with
+   * `?since=<seq>&epoch=<epoch>` so the relay can detect a stale cursor.
+   */
+  epoch?: string
+  /**
+   * Present only on `relay`/`replay` frames when the reconnect's `?epoch=`
+   * no longer matches: the client's cursor belonged to storage epoch `epoch`,
+   * which no longer exists. Events after seq `since` in it may have been lost
+   * and cannot be replayed; the replay restarts from the new storage.
+   */
+  reset?: {
+    epoch: string
+    since: number
+  }
 }

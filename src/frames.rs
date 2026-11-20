@@ -21,8 +21,11 @@ pub struct Notification {
 #[derive(Debug, PartialEq, Eq)]
 pub struct FrameResult {
     pub notifications: Vec<Notification>,
-    /// Highest seq seen (unchanged if the frame carried none).
+    /// Highest seq seen (unchanged if the frame carried none), or the highest
+    /// seq in this frame when its storage epoch replaced the client's.
     pub cursor: i64,
+    /// Storage epoch to persist alongside the cursor.
+    pub epoch: Option<String>,
     pub error: Option<String>,
 }
 
@@ -81,20 +84,37 @@ fn gap_notification(replay: &Value) -> Option<Notification> {
     })
 }
 
+fn reset_notification(replay: &Value) -> Option<Notification> {
+    let since = replay.get("reset")?.get("since").and_then(Value::as_i64)?;
+    let mut meta = BTreeMap::new();
+    meta.insert("event".to_owned(), "reset".to_owned());
+    meta.insert("since".to_owned(), since.to_string());
+    Some(Notification {
+        content: format!(
+            "The relay's storage was reset since this client last connected, so events after seq {since} in the previous storage may have been lost and cannot be replayed. The replay that follows starts over from the new storage."
+        ),
+        meta,
+    })
+}
+
 /// Turn one WebSocket text frame into notifications plus the new cursor.
 ///
 /// - `relay/connected` hello frames advance the cursor but emit nothing.
 /// - `relay/replay` envelopes emit ONE notification carrying all missed
 ///   events (one JSON event per line), mirroring the relay's batching,
-///   preceded by a `gap` notification when the envelope reports trimmed seqs.
+///   preceded by a `reset` notification when the relay's storage epoch
+///   changed and a `gap` notification when the envelope reports trimmed seqs.
+/// - A relay frame whose `epoch` differs from `epoch` restarts the cursor
+///   from that frame's seqs instead of keeping the higher old one.
 /// - Unparseable frames emit nothing and report an error; cursor unchanged.
-pub fn handle_frame(frame_text: &str, cursor: i64) -> FrameResult {
+pub fn handle_frame(frame_text: &str, cursor: i64, epoch: Option<&str>) -> FrameResult {
     let event: Value = match serde_json::from_str(frame_text) {
         Ok(v) => v,
         Err(_) => {
             return FrameResult {
                 notifications: vec![],
                 cursor,
+                epoch: epoch.map(str::to_owned),
                 error: Some("unparseable frame".to_owned()),
             }
         }
@@ -106,20 +126,29 @@ pub fn handle_frame(frame_text: &str, cursor: i64) -> FrameResult {
             return FrameResult {
                 notifications: vec![],
                 cursor,
+                epoch: epoch.map(str::to_owned),
                 error: Some("frame without event field".to_owned()),
             }
         }
     };
 
     if event_name == "relay" {
+        let frame_epoch = str_field(&event, "epoch");
+        let base = match (epoch, frame_epoch.as_deref()) {
+            (Some(ours), Some(theirs)) if ours != theirs => 0,
+            _ => cursor,
+        };
+        let new_epoch = frame_epoch.or_else(|| epoch.map(str::to_owned));
         let action = event.get("action").and_then(Value::as_str);
         if action == Some("replay") {
             if let Some(inner) = event.get("events").and_then(Value::as_array) {
                 let mut refs: Vec<&Value> = vec![&event];
                 refs.extend(inner.iter());
-                let new_cursor = max_seq(cursor, &refs);
-                let mut notifications: Vec<Notification> =
-                    gap_notification(&event).into_iter().collect();
+                let new_cursor = max_seq(base, &refs);
+                let mut notifications: Vec<Notification> = reset_notification(&event)
+                    .into_iter()
+                    .chain(gap_notification(&event))
+                    .collect();
                 if !inner.is_empty() {
                     let content = inner
                         .iter()
@@ -134,6 +163,7 @@ pub fn handle_frame(frame_text: &str, cursor: i64) -> FrameResult {
                 return FrameResult {
                     notifications,
                     cursor: new_cursor,
+                    epoch: new_epoch,
                     error: None,
                 };
             }
@@ -141,7 +171,8 @@ pub fn handle_frame(frame_text: &str, cursor: i64) -> FrameResult {
         // connected hello (or future relay meta): cursor only, no notification.
         return FrameResult {
             notifications: vec![],
-            cursor: max_seq(cursor, &[&event]),
+            cursor: max_seq(base, &[&event]),
+            epoch: new_epoch,
             error: None,
         };
     }
@@ -152,6 +183,7 @@ pub fn handle_frame(frame_text: &str, cursor: i64) -> FrameResult {
             meta: meta_of(&event),
         }],
         cursor: max_seq(cursor, &[&event]),
+        epoch: epoch.map(str::to_owned),
         error: None,
     }
 }
@@ -168,20 +200,33 @@ pub fn next_backoff(previous_ms: u64) -> u64 {
     }
 }
 
-/// Rebuild the WS URL with the current cursor as `?since=` (replaces any).
-pub fn build_ws_url(base_url: &str, cursor: Option<i64>) -> Result<String, url::ParseError> {
+/// Rebuild the WS URL with the current cursor as `?since=` and its storage
+/// epoch as `?epoch=` (replacing any). A stale `epoch` is dropped when there
+/// is no cursor or no epoch to send with it.
+pub fn build_ws_url(
+    base_url: &str,
+    cursor: Option<i64>,
+    epoch: Option<&str>,
+) -> Result<String, url::ParseError> {
     let mut url = url::Url::parse(base_url)?;
-    if let Some(seq) = cursor {
-        if seq >= 0 {
-            let others: Vec<(String, String)> = url
-                .query_pairs()
-                .filter(|(k, _)| k != "since")
-                .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                .collect();
-            url.query_pairs_mut()
-                .clear()
-                .extend_pairs(&others)
-                .append_pair("since", &seq.to_string());
+    let since = cursor.filter(|seq| *seq >= 0);
+    let has_epoch = url.query_pairs().any(|(k, _)| k == "epoch");
+    if since.is_none() && !has_epoch {
+        return Ok(url.to_string());
+    }
+    let others: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(k, _)| k != "epoch" && (since.is_none() || k != "since"))
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    {
+        let mut pairs = url.query_pairs_mut();
+        pairs.clear().extend_pairs(&others);
+        if let Some(seq) = since {
+            pairs.append_pair("since", &seq.to_string());
+            if let Some(epoch) = epoch {
+                pairs.append_pair("epoch", epoch);
+            }
         }
     }
     Ok(url.to_string())
@@ -201,7 +246,7 @@ mod tests {
     #[test]
     fn normal_event_one_notification_with_meta() {
         let frame = r#"{"v":1,"event":"ci_rollup","repo":"acme/widgets","number":42,"state":"failure","seq":17,"ci":{"passing":1}}"#;
-        let result = handle_frame(frame, 3);
+        let result = handle_frame(frame, 3, None);
         assert_eq!(result.notifications.len(), 1);
         assert_eq!(result.notifications[0].content, frame);
         assert_eq!(
@@ -220,7 +265,7 @@ mod tests {
     #[test]
     fn hello_advances_cursor_without_notification() {
         let frame = r#"{"v":1,"event":"relay","action":"connected","seq":9}"#;
-        let result = handle_frame(frame, 0);
+        let result = handle_frame(frame, 0, None);
         assert!(result.notifications.is_empty());
         assert_eq!(result.cursor, 9);
     }
@@ -228,7 +273,7 @@ mod tests {
     #[test]
     fn replay_envelope_one_batched_notification() {
         let frame = r#"{"v":1,"event":"relay","action":"replay","events":[{"v":1,"event":"issues","seq":4},{"v":1,"event":"pull_request","seq":6}]}"#;
-        let result = handle_frame(frame, 2);
+        let result = handle_frame(frame, 2, None);
         assert_eq!(result.notifications.len(), 1);
         assert_eq!(
             result.notifications[0].meta,
@@ -241,13 +286,13 @@ mod tests {
     #[test]
     fn empty_replay_emits_nothing() {
         let frame = r#"{"v":1,"event":"relay","action":"replay","events":[]}"#;
-        assert!(handle_frame(frame, 5).notifications.is_empty());
+        assert!(handle_frame(frame, 5, None).notifications.is_empty());
     }
 
     #[test]
     fn replay_with_gap_notifies_gap_before_events() {
         let frame = r#"{"v":1,"event":"relay","action":"replay","gap":{"from":1,"to":2},"events":[{"v":1,"event":"issues","seq":3},{"v":1,"event":"issues","seq":4}]}"#;
-        let result = handle_frame(frame, 0);
+        let result = handle_frame(frame, 0, None);
         assert_eq!(result.notifications.len(), 2);
         assert_eq!(
             result.notifications[0].meta,
@@ -264,7 +309,7 @@ mod tests {
     fn replay_with_gap_and_no_events_still_notifies_gap() {
         let frame =
             r#"{"v":1,"event":"relay","action":"replay","gap":{"from":6,"to":9},"events":[]}"#;
-        let result = handle_frame(frame, 5);
+        let result = handle_frame(frame, 5, None);
         assert_eq!(result.notifications.len(), 1);
         assert_eq!(
             result.notifications[0].meta,
@@ -275,17 +320,17 @@ mod tests {
 
     #[test]
     fn garbage_frames_dropped_with_error() {
-        let r = handle_frame("not json", 7);
+        let r = handle_frame("not json", 7, None);
         assert!(r.notifications.is_empty());
         assert_eq!(r.cursor, 7);
         assert!(r.error.is_some());
-        assert!(handle_frame(r#"{"no":"event"}"#, 7).error.is_some());
+        assert!(handle_frame(r#"{"no":"event"}"#, 7, None).error.is_some());
     }
 
     #[test]
     fn cursor_never_goes_backwards() {
         let frame = r#"{"v":1,"event":"issues","seq":3}"#;
-        assert_eq!(handle_frame(frame, 10).cursor, 10);
+        assert_eq!(handle_frame(frame, 10, None).cursor, 10);
     }
 
     #[test]
@@ -299,16 +344,125 @@ mod tests {
     #[test]
     fn build_ws_url_sets_and_replaces_since() {
         let base = "wss://relay.test/ws/chan?token=t&events=ci_rollup";
-        let with = build_ws_url(base, Some(17)).unwrap();
+        let with = build_ws_url(base, Some(17), None).unwrap();
         assert!(with.contains("since=17"));
         assert!(with.contains("token=t"));
         assert!(with.contains("events=ci_rollup"));
 
-        let replaced = build_ws_url("wss://relay.test/ws/chan?since=3&token=t", Some(17)).unwrap();
+        let replaced =
+            build_ws_url("wss://relay.test/ws/chan?since=3&token=t", Some(17), None).unwrap();
         assert!(replaced.contains("since=17"));
         assert!(!replaced.contains("since=3"));
 
-        let none = build_ws_url("wss://relay.test/ws/chan?token=t", None).unwrap();
+        let none = build_ws_url("wss://relay.test/ws/chan?token=t", None, None).unwrap();
         assert!(!none.contains("since="));
+    }
+
+    #[test]
+    fn epoch_mismatch_on_replay_resets_cursor_below_old_one() {
+        let frame = r#"{"v":1,"event":"relay","action":"replay","epoch":"new","reset":{"epoch":"old","since":40},"events":[{"v":1,"event":"issues","seq":1},{"v":1,"event":"issues","seq":2}]}"#;
+        let result = handle_frame(frame, 40, Some("old"));
+        assert_eq!(result.cursor, 2);
+        assert_eq!(result.epoch.as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn epoch_mismatch_on_replay_without_events_resets_cursor_to_zero() {
+        let frame = r#"{"v":1,"event":"relay","action":"replay","epoch":"new","reset":{"epoch":"old","since":40},"events":[]}"#;
+        let result = handle_frame(frame, 40, Some("old"));
+        assert_eq!(result.cursor, 0);
+        assert_eq!(result.epoch.as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn epoch_mismatch_on_hello_resets_cursor_to_hello_seq() {
+        let frame = r#"{"v":1,"event":"relay","action":"connected","seq":3,"epoch":"new"}"#;
+        let result = handle_frame(frame, 40, Some("old"));
+        assert!(result.notifications.is_empty());
+        assert_eq!(result.cursor, 3);
+        assert_eq!(result.epoch.as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn missing_client_epoch_adopts_frame_epoch_and_keeps_max() {
+        let frame = r#"{"v":1,"event":"relay","action":"connected","seq":3,"epoch":"e1"}"#;
+        let result = handle_frame(frame, 40, None);
+        assert_eq!(result.cursor, 40);
+        assert_eq!(result.epoch.as_deref(), Some("e1"));
+    }
+
+    #[test]
+    fn same_epoch_keeps_max() {
+        let frame = r#"{"v":1,"event":"relay","action":"connected","seq":3,"epoch":"e1"}"#;
+        let result = handle_frame(frame, 40, Some("e1"));
+        assert_eq!(result.cursor, 40);
+        assert_eq!(result.epoch.as_deref(), Some("e1"));
+    }
+
+    #[test]
+    fn frames_without_epoch_keep_client_epoch() {
+        let event = handle_frame(r#"{"v":1,"event":"issues","seq":41}"#, 40, Some("e1"));
+        assert_eq!(event.cursor, 41);
+        assert_eq!(event.epoch.as_deref(), Some("e1"));
+        let hello = handle_frame(
+            r#"{"v":1,"event":"relay","action":"connected","seq":3}"#,
+            40,
+            Some("e1"),
+        );
+        assert_eq!(hello.cursor, 40);
+        assert_eq!(hello.epoch.as_deref(), Some("e1"));
+    }
+
+    #[test]
+    fn reset_notifies_before_gap_and_replay() {
+        let frame = r#"{"v":1,"event":"relay","action":"replay","epoch":"new","reset":{"epoch":"old","since":40},"gap":{"from":1,"to":2},"events":[{"v":1,"event":"issues","seq":3}]}"#;
+        let result = handle_frame(frame, 40, Some("old"));
+        assert_eq!(result.notifications.len(), 3);
+        assert_eq!(
+            result.notifications[0].meta,
+            meta(&[("event", "reset"), ("since", "40")])
+        );
+        assert!(result.notifications[0].content.contains("seq 40"));
+        assert_eq!(
+            result.notifications[1].meta,
+            meta(&[("event", "gap"), ("from", "1"), ("to", "2")])
+        );
+        assert_eq!(
+            result.notifications[2].meta,
+            meta(&[("event", "replay"), ("count", "1")])
+        );
+        assert_eq!(result.cursor, 3);
+    }
+
+    #[test]
+    fn build_ws_url_sets_replaces_and_drops_epoch() {
+        let with = build_ws_url("wss://relay.test/ws/chan?token=t", Some(17), Some("e1")).unwrap();
+        assert!(with.contains("since=17"));
+        assert!(with.contains("epoch=e1"));
+        assert!(with.contains("token=t"));
+
+        let replaced = build_ws_url(
+            "wss://relay.test/ws/chan?epoch=old&since=3&token=t",
+            Some(17),
+            Some("e1"),
+        )
+        .unwrap();
+        assert!(replaced.contains("epoch=e1"));
+        assert!(!replaced.contains("epoch=old"));
+        assert_eq!(replaced.matches("epoch=").count(), 1);
+
+        let no_epoch =
+            build_ws_url("wss://relay.test/ws/chan?epoch=old&token=t", Some(17), None).unwrap();
+        assert!(no_epoch.contains("since=17"));
+        assert!(!no_epoch.contains("epoch="));
+
+        let no_cursor = build_ws_url(
+            "wss://relay.test/ws/chan?epoch=old&token=t",
+            None,
+            Some("e1"),
+        )
+        .unwrap();
+        assert!(!no_cursor.contains("epoch="));
+        assert!(no_cursor.contains("token=t"));
     }
 }

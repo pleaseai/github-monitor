@@ -13,25 +13,42 @@ export function trimGap(since: number, minSeq: number | null): ReplayGap | undef
   return { from: nextExpected, to: minSeq - 1 }
 }
 
-export function replayFrame(
-  since: number,
-  missed: RelayEvent[],
-  minSeq: number | null,
-  ts: string,
-): RelayEvent | undefined {
+export interface ReplayReset {
+  epoch: string
+  since: number
+}
+
+export interface ReplayFrameInput {
+  /** Effective cursor: 0 after a storage reset, else the client's `since`. */
+  since: number
+  missed: RelayEvent[]
+  minSeq: number | null
+  ts: string
+  epoch: string
+  reset?: ReplayReset
+}
+
+export function replayFrame({ since, missed, minSeq, ts, epoch, reset }: ReplayFrameInput): RelayEvent | undefined {
   const gap = trimGap(since, minSeq)
-  if (missed.length === 0 && !gap) {
+  if (missed.length === 0 && !gap && !reset) {
     return undefined
+  }
+  const parts = [`${missed.length} event(s) since seq ${since}`]
+  if (reset) {
+    parts.unshift(`relay storage reset; events after seq ${reset.since} in epoch ${reset.epoch} may be lost`)
+  }
+  if (gap) {
+    parts.push(`seq ${gap.from}-${gap.to} trimmed from the buffer`)
   }
   return {
     v: 1,
     event: 'relay',
     action: 'replay',
     ts,
-    preview: gap
-      ? `${missed.length} event(s) since seq ${since}; seq ${gap.from}-${gap.to} trimmed from the buffer`
-      : `${missed.length} event(s) since seq ${since}`,
+    preview: parts.join('; '),
     events: missed,
     ...(gap ? { gap } : {}),
+    ...(reset ? { reset } : {}),
+    epoch,
   }
 }
