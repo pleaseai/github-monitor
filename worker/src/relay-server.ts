@@ -13,7 +13,7 @@ import type { RollupChecks } from './rollup.ts'
 import type { Env, RelayEvent } from './types.ts'
 import { Server } from 'partyserver'
 import { matchesFilter, parseListFilter, parseNumberListFilter } from './filter.ts'
-import { trimGap } from './replay.ts'
+import { replayFrame } from './replay.ts'
 import { buildRollupEvent, compileReviewerPatterns, DEFAULT_ROLLUP_QUIET_MS, isCiSourceEvent } from './rollup.ts'
 
 const BUFFER_SIZE = 200
@@ -193,19 +193,8 @@ export class RelayServer extends Server<Env> {
       const missed = rows
         .map(row => parseStoredEvent(row.body))
         .filter(event => matchesFilter(connection.state, event))
-      const gap = trimGap(since, this.#minSeq())
-      if (missed.length > 0 || gap) {
-        const batch: RelayEvent = {
-          v: 1,
-          event: 'relay',
-          action: 'replay',
-          ts: new Date().toISOString(),
-          preview: gap
-            ? `${missed.length} event(s) since seq ${since}; seq ${gap.from}-${gap.to} trimmed from the buffer`
-            : `${missed.length} event(s) since seq ${since}`,
-          events: missed,
-          ...(gap ? { gap } : {}),
-        }
+      const batch = replayFrame(since, missed, this.#minSeq(), new Date().toISOString())
+      if (batch) {
         connection.send(JSON.stringify(batch))
       }
     }
