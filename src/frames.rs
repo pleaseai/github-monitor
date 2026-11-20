@@ -205,10 +205,6 @@ pub fn next_backoff(previous_ms: u64) -> u64 {
     }
 }
 
-/// Cursor to reconnect with after a socket closes. A connection that closed
-/// before its first frame was read has no cursor yet, but events stored after
-/// it opened were queued behind the lost hello, so the next connection asks
-/// for the whole buffer with `?since=0`.
 pub fn reconnect_cursor(cursor: Option<i64>) -> Option<i64> {
     Some(cursor.unwrap_or(0))
 }

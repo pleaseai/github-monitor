@@ -387,8 +387,6 @@ async fn main() {
                         _ => {}
                     }
                 }
-                // In memory only: a fresh process with no cursor file still
-                // starts without `since`.
                 cursor = reconnect_cursor(cursor);
                 backoff_ms = next_backoff(backoff_ms);
                 log(&format!("socket closed, reconnecting in {backoff_ms}ms"));
