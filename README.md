@@ -82,7 +82,9 @@ and replays the relay's retained buffer (up to 200 events matching the
 connection's filters). Events already trimmed from it arrive as a `gap`. That
 connection also sends the epoch the relay returned in the `X-Relay-Epoch`
 header of the first handshake, so a storage wipe in between still arrives as a
-`reset`.
+`reset`. That epoch is kept in memory until the first frame saves the cursor
+file; if the process restarts before then, it starts over as a first
+connection and a wipe in that window may not produce a `reset`.
 
 ## Event kinds
 
