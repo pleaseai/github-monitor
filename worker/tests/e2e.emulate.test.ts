@@ -339,6 +339,9 @@ describe('e2e: github emulator → relay → websocket', () => {
         await Bun.sleep(100)
       }
       socket.close()
+      if (!received.some(e => e.action === 'connected')) {
+        throw new Error(`no hello frame within 5s for ${query}`)
+      }
       return received
     }
 

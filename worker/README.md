@@ -36,7 +36,7 @@ channel / Monitor ◀──wss /ws/<channel>?token=…────────�
   restarts `seq` at 1 under a new epoch. Reconnect with
   `?since=<seq>&epoch=<epoch>`; if the epoch no longer matches, the relay
   replays the whole buffer and the replay frame carries
-  `"reset":{"epoch":<old>,"since":<seq>}`: events after `since` in the old
+  `"reset":{"epoch":"<old>","since":<seq>}`: events after `since` in the old
   epoch may have been lost (the frame is sent even if no buffered event
   matches). A `since` above the current `seq` also proves a wipe, so it gets
   the same reset (without `epoch`) even when no `?epoch=` was sent; otherwise a
@@ -167,8 +167,10 @@ Each event arrives as one JSON frame:
 {"v":1,"event":"check_run","action":"completed","repo":"acme/widgets","name":"ci/test","state":"failure","number":42,"seq":17,"ts":"…"}
 ```
 
-The first frame after connect is `{"event":"relay","action":"connected","seq":<cursor>,"epoch":"<id>"}` —
+Every connection gets a hello frame, `{"event":"relay","action":"connected","seq":<cursor>,"epoch":"<id>"}` —
 store `seq` and `epoch` and reconnect with `?since=<seq>&epoch=<id>` to catch up after a disconnect.
+The hello is not always the first frame: when a reconnect has missed events, a trimmed gap or a storage
+reset, the `relay/replay` frame comes first and the hello follows it.
 
 ## CI rollup (derived `ci_rollup` event)
 
