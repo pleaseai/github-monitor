@@ -17,6 +17,7 @@ import { replayFrame } from './replay.ts'
 import { buildRollupEvent, compileReviewerPatterns, DEFAULT_ROLLUP_QUIET_MS, isCiSourceEvent } from './rollup.ts'
 
 const BUFFER_SIZE = 200
+const EPOCH_HEADER = 'X-Relay-Epoch'
 
 interface EventRow {
   seq: number
@@ -41,6 +42,16 @@ export class RelayServer extends Server<Env> {
   static options = { hibernate: true }
 
   #epoch = ''
+
+  async fetch(request: Request): Promise<Response> {
+    const response = await super.fetch(request)
+    if (response.status !== 101 || !response.webSocket) {
+      return response
+    }
+    const headers = new Headers(response.headers)
+    headers.set(EPOCH_HEADER, this.#epoch)
+    return new Response(null, { status: 101, webSocket: response.webSocket, headers })
+  }
 
   onStart(): void {
     this.sql`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`

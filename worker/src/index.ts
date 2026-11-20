@@ -110,11 +110,9 @@ async function handleWebSocket(request: Request, env: Env, channel: string): Pro
   // RFC 6455: a client that offered subprotocols rejects a 101 that selects
   // none. PartyServer doesn't echo, so wrap the response and select ours.
   if (response.status === 101 && response.webSocket && request.headers.get('Sec-WebSocket-Protocol')) {
-    return new Response(null, {
-      status: 101,
-      webSocket: response.webSocket,
-      headers: { 'Sec-WebSocket-Protocol': RELAY_SUBPROTOCOL },
-    })
+    const headers = new Headers(response.headers)
+    headers.set('Sec-WebSocket-Protocol', RELAY_SUBPROTOCOL)
+    return new Response(null, { status: 101, webSocket: response.webSocket, headers })
   }
   return response
 }
