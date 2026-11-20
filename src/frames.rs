@@ -65,8 +65,6 @@ fn meta_of(event: &Value) -> BTreeMap<String, String> {
     meta
 }
 
-/// The `gap` notification for a replay frame whose `gap` field names seqs the
-/// relay had already trimmed from its buffer when the client reconnected.
 fn gap_notification(replay: &Value) -> Option<Notification> {
     let gap = replay.get("gap")?;
     let from = gap.get("from").and_then(Value::as_i64)?;

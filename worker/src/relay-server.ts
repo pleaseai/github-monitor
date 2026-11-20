@@ -193,8 +193,6 @@ export class RelayServer extends Server<Env> {
       const missed = rows
         .map(row => parseStoredEvent(row.body))
         .filter(event => matchesFilter(connection.state, event))
-      // The trimmed seqs are reported whatever the connection's filter is:
-      // their bodies are gone, so the relay cannot tell whether they matched.
       const gap = trimGap(since, this.#minSeq())
       if (missed.length > 0 || gap) {
         const batch: RelayEvent = {
