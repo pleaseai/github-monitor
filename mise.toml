@@ -27,7 +27,7 @@ dir = "worker"
 run = [
   "bun install",
   "bun run typecheck",
-  "bun test tests/signature.test.ts tests/auth.test.ts tests/github-access.test.ts tests/summarize.test.ts tests/filter.test.ts tests/rollup.test.ts",
+  "bun test tests/signature.test.ts tests/auth.test.ts tests/github-access.test.ts tests/summarize.test.ts tests/filter.test.ts tests/rollup.test.ts tests/replay.test.ts",
 ]
 
 [tasks.check]

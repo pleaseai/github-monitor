@@ -65,11 +65,30 @@ fn meta_of(event: &Value) -> BTreeMap<String, String> {
     meta
 }
 
+/// The `gap` notification for a replay frame whose `gap` field names seqs the
+/// relay had already trimmed from its buffer when the client reconnected.
+fn gap_notification(replay: &Value) -> Option<Notification> {
+    let gap = replay.get("gap")?;
+    let from = gap.get("from").and_then(Value::as_i64)?;
+    let to = gap.get("to").and_then(Value::as_i64)?;
+    let mut meta = BTreeMap::new();
+    meta.insert("event".to_owned(), "gap".to_owned());
+    meta.insert("from".to_owned(), from.to_string());
+    meta.insert("to".to_owned(), to.to_string());
+    Some(Notification {
+        content: format!(
+            "The relay buffer had already dropped seq {from}-{to} when this client reconnected. Those events were not delivered and cannot be replayed."
+        ),
+        meta,
+    })
+}
+
 /// Turn one WebSocket text frame into notifications plus the new cursor.
 ///
 /// - `relay/connected` hello frames advance the cursor but emit nothing.
 /// - `relay/replay` envelopes emit ONE notification carrying all missed
-///   events (one JSON event per line), mirroring the relay's batching.
+///   events (one JSON event per line), mirroring the relay's batching,
+///   preceded by a `gap` notification when the envelope reports trimmed seqs.
 /// - Unparseable frames emit nothing and report an error; cursor unchanged.
 pub fn handle_frame(frame_text: &str, cursor: i64) -> FrameResult {
     let event: Value = match serde_json::from_str(frame_text) {
@@ -101,23 +120,21 @@ pub fn handle_frame(frame_text: &str, cursor: i64) -> FrameResult {
                 let mut refs: Vec<&Value> = vec![&event];
                 refs.extend(inner.iter());
                 let new_cursor = max_seq(cursor, &refs);
-                if inner.is_empty() {
-                    return FrameResult {
-                        notifications: vec![],
-                        cursor: new_cursor,
-                        error: None,
-                    };
+                let mut notifications: Vec<Notification> =
+                    gap_notification(&event).into_iter().collect();
+                if !inner.is_empty() {
+                    let content = inner
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let mut meta = BTreeMap::new();
+                    meta.insert("event".to_owned(), "replay".to_owned());
+                    meta.insert("count".to_owned(), inner.len().to_string());
+                    notifications.push(Notification { content, meta });
                 }
-                let content = inner
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let mut meta = BTreeMap::new();
-                meta.insert("event".to_owned(), "replay".to_owned());
-                meta.insert("count".to_owned(), inner.len().to_string());
                 return FrameResult {
-                    notifications: vec![Notification { content, meta }],
+                    notifications,
                     cursor: new_cursor,
                     error: None,
                 };
@@ -227,6 +244,35 @@ mod tests {
     fn empty_replay_emits_nothing() {
         let frame = r#"{"v":1,"event":"relay","action":"replay","events":[]}"#;
         assert!(handle_frame(frame, 5).notifications.is_empty());
+    }
+
+    #[test]
+    fn replay_with_gap_notifies_gap_before_events() {
+        let frame = r#"{"v":1,"event":"relay","action":"replay","gap":{"from":1,"to":2},"events":[{"v":1,"event":"issues","seq":3},{"v":1,"event":"issues","seq":4}]}"#;
+        let result = handle_frame(frame, 0);
+        assert_eq!(result.notifications.len(), 2);
+        assert_eq!(
+            result.notifications[0].meta,
+            meta(&[("event", "gap"), ("from", "1"), ("to", "2")])
+        );
+        assert_eq!(
+            result.notifications[1].meta,
+            meta(&[("event", "replay"), ("count", "2")])
+        );
+        assert_eq!(result.cursor, 4);
+    }
+
+    #[test]
+    fn replay_with_gap_and_no_events_still_notifies_gap() {
+        let frame =
+            r#"{"v":1,"event":"relay","action":"replay","gap":{"from":6,"to":9},"events":[]}"#;
+        let result = handle_frame(frame, 5);
+        assert_eq!(result.notifications.len(), 1);
+        assert_eq!(
+            result.notifications[0].meta,
+            meta(&[("event", "gap"), ("from", "6"), ("to", "9")])
+        );
+        assert_eq!(result.cursor, 5);
     }
 
     #[test]

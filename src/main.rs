@@ -42,6 +42,7 @@ Events from the github-relay channel arrive as <channel source=\"github-relay\" 
 Key event kinds:
 - ci_rollup: CI settled for a head SHA. \"state\" is the CI verdict (failure|pending|success, AI reviewers excluded). \"ci\" has check counts and failing names. \"reviewers\" tracks AI review bots: pending = still reviewing (wait), done = their review comments are ready to process now, failed = the bot itself errored (surface to the user; never auto-retry a bot).
 - replay: a batch of events missed while disconnected — the body is one JSON event per line. Process each line as if it had arrived live, oldest first.
+- gap: the relay had already dropped seqs \"from\" through \"to\" from its buffer when this client reconnected, so those events were never delivered and cannot be replayed. It arrives just before the replay it belongs to. Re-read from GitHub the state you were tracking (for a PR: gh pr view, gh pr checks, and its review threads) instead of assuming nothing happened.
 - Other kinds mirror GitHub webhooks (pull_request, pull_request_review, pull_request_review_comment, issues, issue_comment, push, workflow_run, ...) with fields: repo, number (PR/issue), action, state, sha, ref, title, preview (truncated body), url.
 
 React proportionally: a ci_rollup failure or a new review comment on a PR you are babysitting usually warrants action; unrelated events usually need none.";

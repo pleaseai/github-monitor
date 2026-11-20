@@ -83,6 +83,9 @@ The cursor file is keyed by a hash of the URL, so tokens never touch disk.
   and failing names; `reviewers` tracks AI review bots (pending / done / failed).
 - **`replay`** — a batch of events missed while disconnected, one JSON event
   per line, oldest first.
+- **`gap`** — the relay had already trimmed seqs `from`–`to` from its buffer
+  when the client reconnected. Those events are lost; re-read the state you
+  track from GitHub. Sent just before the `replay` it belongs to.
 - Everything else mirrors GitHub webhooks (`pull_request`,
   `pull_request_review`, `issues`, `issue_comment`, `push`, `workflow_run`, …).
 

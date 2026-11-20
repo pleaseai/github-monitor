@@ -91,4 +91,14 @@ export interface RelayEvent {
    * instead of one frame each. Each entry carries its own `seq`.
    */
   events?: RelayEvent[]
+  /**
+   * Seqs the reconnect asked for (`since + 1` onward) that the buffer had
+   * already trimmed — present only on `relay`/`replay` frames, and the only
+   * reason such a frame is sent with an empty `events`. Those events are
+   * lost; the consumer should re-read the state it cares about from GitHub.
+   */
+  gap?: {
+    from: number
+    to: number
+  }
 }
