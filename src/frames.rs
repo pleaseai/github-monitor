@@ -206,7 +206,7 @@ pub fn next_backoff(previous_ms: u64) -> u64 {
 }
 
 pub fn reconnect_cursor(cursor: Option<i64>) -> Option<i64> {
-    Some(cursor.unwrap_or(0))
+    Some(cursor.unwrap_or(0).max(0))
 }
 
 /// Rebuild the WS URL with the current cursor as `?since=` and its storage
@@ -354,6 +354,7 @@ mod tests {
     fn reconnect_without_cursor_asks_for_whole_buffer() {
         assert_eq!(reconnect_cursor(None), Some(0));
         assert_eq!(reconnect_cursor(Some(17)), Some(17));
+        assert_eq!(reconnect_cursor(Some(-3)), Some(0));
         let url = build_ws_url(
             "wss://relay.test/ws/chan?token=t",
             reconnect_cursor(None),
