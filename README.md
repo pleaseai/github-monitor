@@ -79,7 +79,10 @@ by a hash of the URL, so tokens never touch disk. With no cursor file the first
 connection sends no `since` and gets only new events. If that socket closes
 before the client reads its first frame, the next connection sends `since=0`
 and replays the relay's retained buffer (up to 200 events matching the
-connection's filters). Events already trimmed from it arrive as a `gap`.
+connection's filters). Events already trimmed from it arrive as a `gap`. That
+connection also sends the epoch the relay returned in the `X-Relay-Epoch`
+header of the first handshake, so a storage wipe in between still arrives as a
+`reset`.
 
 ## Event kinds
 

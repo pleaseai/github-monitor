@@ -151,6 +151,21 @@ describe('e2e: github emulator → relay → websocket', () => {
     expect(hello.seq).toBeNumber()
   })
 
+  test('the WebSocket upgrade response carries the epoch the hello announces', async () => {
+    const hello = await waitForFrame(e => e.event === 'relay' && e.action === 'connected')
+    const token = await deriveChannelToken(TOKEN_SECRET, CHANNEL)
+    const upgrade = { 'Upgrade': 'websocket', 'Connection': 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==' }
+    const viaQuery = await fetch(`http://127.0.0.1:${RELAY_PORT}/ws/${CHANNEL}?token=${token}`, { headers: upgrade })
+    const viaSubprotocol = await fetch(`http://127.0.0.1:${RELAY_PORT}/ws/${CHANNEL}`, {
+      headers: { ...upgrade, 'Sec-WebSocket-Protocol': `github-relay.v1, ${token}` },
+    })
+    for (const response of [viaQuery, viaSubprotocol]) {
+      expect(response.status).toBe(101)
+      expect(response.headers.get('X-Relay-Epoch')).toBe(hello.epoch as string)
+    }
+    expect(viaSubprotocol.headers.get('Sec-WebSocket-Protocol')).toBe('github-relay.v1')
+  })
+
   test('issue opened via GitHub API arrives as a summarized frame', async () => {
     await githubApi(`/repos/${OWNER}/${REPO}/issues`, { title: 'E2E issue', body: 'from emulator' })
     const event = await waitForFrame(e => e.event === 'issues' && e.action === 'opened')
