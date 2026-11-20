@@ -294,7 +294,27 @@ describe('e2e: github emulator → relay → websocket', () => {
     expect(prEvents).toHaveLength(1)
     expect(prEvents[0]?.seq).toBe(first.seq)
     scoped.close()
-  }, 10_000)
+
+    const since = (first.seq as number) - 1
+    const replay = new WebSocket(`ws://127.0.0.1:${RELAY_PORT}/ws/${CHANNEL}?token=${token}&since=${since}&prs=61&events=pull_request`)
+    const replayFrames: string[] = []
+    replay.onmessage = message => replayFrames.push(String(message.data))
+    await new Promise<void>((resolve, reject) => {
+      replay.onopen = () => resolve()
+      replay.onerror = () => reject(new Error('replay ws connect failed'))
+    })
+    const deadline = Date.now() + 5000
+    let batch: Record<string, unknown> | undefined
+    while (!batch && Date.now() < deadline) {
+      batch = replayFrames
+        .map(f => JSON.parse(f) as Record<string, unknown>)
+        .find(e => e.event === 'relay' && e.action === 'replay')
+      if (!batch) await Bun.sleep(100)
+    }
+    replay.close()
+    const replayed = (batch?.events as Record<string, unknown>[] | undefined) ?? []
+    expect(replayed.map(e => e.seq)).toEqual([first.seq])
+  }, 15_000)
 
   test('POST /auth exchanges a GitHub token for a working expiring WS token', async () => {
     // The relay verifies repo access against the (emulated) GitHub API.
