@@ -17,8 +17,6 @@ import { replayFrame } from './replay.ts'
 import { buildRollupEvent, compileReviewerPatterns, DEFAULT_ROLLUP_QUIET_MS, isCiSourceEvent } from './rollup.ts'
 
 const BUFFER_SIZE = 200
-// Sent on the 101 so a client that closes before its first frame still learns
-// the epoch to send with its next ?since=.
 const EPOCH_HEADER = 'X-Relay-Epoch'
 
 interface EventRow {

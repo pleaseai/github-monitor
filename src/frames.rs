@@ -209,13 +209,8 @@ pub fn reconnect_cursor(cursor: Option<i64>) -> Option<i64> {
     Some(cursor.unwrap_or(0).max(0))
 }
 
-/// Response header on the WebSocket upgrade that carries the relay's storage epoch.
 pub const EPOCH_HEADER: &str = "x-relay-epoch";
 
-/// The epoch to keep after a handshake. An epoch the client already holds wins,
-/// because the relay detects a storage wipe by comparing it. Otherwise the
-/// relay's epoch is adopted, so a socket that closes before its first frame
-/// still reconnects with `?epoch=` and learns of a wipe in between.
 pub fn handshake_epoch(current: Option<String>, header: Option<&str>) -> Option<String> {
     current.or_else(|| header.filter(|e| !e.is_empty()).map(str::to_owned))
 }
