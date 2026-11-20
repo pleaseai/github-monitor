@@ -27,7 +27,10 @@ channel / Monitor ◀──wss /ws/<channel>?token=…────────�
   `?since=<seq>` and missed events (buffer: last 200 per channel) arrive as
   **one batched `{"event":"relay","action":"replay","events":[…]}` frame**
   (per [DO WebSocket best practices](https://developers.cloudflare.com/durable-objects/best-practices/websockets/#batch-messages-to-reduce-overhead)).
-  A consumer that lost the socket re-arms with the last seen `seq`.
+  A consumer that lost the socket re-arms with the last seen `seq`. When the
+  buffer no longer reaches back to `since + 1`, the replay frame also carries
+  `"gap":{"from":…,"to":…}` for the trimmed seqs (and is sent even if no
+  buffered event matches the connection's filters).
 - **Stateless auth** — per-channel token = `base64url(HMAC-SHA256(TOKEN_SECRET, "ws:" + channel))`.
   No token storage; rotate `TOKEN_SECRET` to revoke all.
 

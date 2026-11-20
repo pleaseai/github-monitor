@@ -13,6 +13,7 @@ import type { RollupChecks } from './rollup.ts'
 import type { Env, RelayEvent } from './types.ts'
 import { Server } from 'partyserver'
 import { matchesFilter, parseListFilter, parseNumberListFilter } from './filter.ts'
+import { replayFrame } from './replay.ts'
 import { buildRollupEvent, compileReviewerPatterns, DEFAULT_ROLLUP_QUIET_MS, isCiSourceEvent } from './rollup.ts'
 
 const BUFFER_SIZE = 200
@@ -192,15 +193,8 @@ export class RelayServer extends Server<Env> {
       const missed = rows
         .map(row => parseStoredEvent(row.body))
         .filter(event => matchesFilter(connection.state, event))
-      if (missed.length > 0) {
-        const batch: RelayEvent = {
-          v: 1,
-          event: 'relay',
-          action: 'replay',
-          ts: new Date().toISOString(),
-          preview: `${missed.length} event(s) since seq ${since}`,
-          events: missed,
-        }
+      const batch = replayFrame(since, missed, this.#minSeq(), new Date().toISOString())
+      if (batch) {
         connection.send(JSON.stringify(batch))
       }
     }
@@ -224,6 +218,11 @@ export class RelayServer extends Server<Env> {
 
   onRequest(): Response {
     return Response.json({ error: 'expected WebSocket upgrade or worker RPC' }, { status: 400 })
+  }
+
+  #minSeq(): number | null {
+    const row = this.sql<{ min: number | null }>`SELECT MIN(seq) AS min FROM events`
+    return row[0]?.min ?? null
   }
 
   #lastSeq(): number {
