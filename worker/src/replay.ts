@@ -19,7 +19,6 @@ export interface ReplayReset {
 }
 
 export interface ReplayFrameInput {
-  /** Effective cursor: 0 after a storage reset, else the client's `since`. */
   since: number
   missed: RelayEvent[]
   minSeq: number | null

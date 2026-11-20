@@ -43,7 +43,6 @@ export class RelayServer extends Server<Env> {
   #epoch = ''
 
   onStart(): void {
-    // A storage wipe drops this table, so the next start mints a new epoch.
     this.sql`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`
     this.sql`INSERT OR IGNORE INTO meta (key, value) VALUES ('epoch', ${crypto.randomUUID()})`
     this.#epoch = this.sql<{ value: string }>`SELECT value FROM meta WHERE key = 'epoch'`[0]?.value ?? ''
@@ -245,8 +244,6 @@ export class RelayServer extends Server<Env> {
       }
     }
 
-    // Hello frame: tells the client the current cursor and storage epoch so
-    // it can resume with ?since=<seq>&epoch=<epoch> even if no events arrive.
     const hello: RelayEvent = {
       v: 1,
       event: 'relay',
