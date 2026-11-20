@@ -34,7 +34,7 @@ use tokio_tungstenite::tungstenite::Message;
 use exchange::{
     auth_endpoint_for, has_static_token, resolve_env_token, should_refresh, with_token,
 };
-use frames::{build_ws_url, handle_frame, next_backoff};
+use frames::{build_ws_url, handle_frame, next_backoff, reconnect_cursor};
 
 const INSTRUCTIONS: &str = "\
 Events from the github-relay channel arrive as <channel source=\"github-relay\" event=\"...\" ...> tags with a JSON body (one GitHub event summary). They are one-way: read them and act; no reply is expected or possible.
@@ -387,6 +387,7 @@ async fn main() {
                         _ => {}
                     }
                 }
+                cursor = reconnect_cursor(cursor);
                 backoff_ms = next_backoff(backoff_ms);
                 log(&format!("socket closed, reconnecting in {backoff_ms}ms"));
             }

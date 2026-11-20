@@ -75,7 +75,11 @@ for macOS (arm64/x64), Linux (arm64/x64), and Windows (x64).
 | `GITHUB_RELAY_STATE_DIR` | No       | Cursor directory (default `~/.claude/github-relay`)                  |
 
 The cursor file stores the last seq and the relay's storage epoch, and is keyed
-by a hash of the URL, so tokens never touch disk.
+by a hash of the URL, so tokens never touch disk. With no cursor file the first
+connection sends no `since` and gets only new events. If that socket closes
+before the client reads its first frame, the next connection sends `since=0`
+and replays the relay's retained buffer (up to 200 events matching the
+connection's filters). Events already trimmed from it arrive as a `gap`.
 
 ## Event kinds
 
