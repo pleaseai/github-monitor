@@ -74,7 +74,8 @@ for macOS (arm64/x64), Linux (arm64/x64), and Windows (x64).
 | `GITHUB_TOKEN`           | No       | GitHub token for the `/auth` exchange (falls back to `gh auth token`) |
 | `GITHUB_RELAY_STATE_DIR` | No       | Cursor directory (default `~/.claude/github-relay`)                  |
 
-The cursor file is keyed by a hash of the URL, so tokens never touch disk.
+The cursor file stores the last seq and the relay's storage epoch, and is keyed
+by a hash of the URL, so tokens never touch disk.
 
 ## Event kinds
 
@@ -86,6 +87,10 @@ The cursor file is keyed by a hash of the URL, so tokens never touch disk.
 - **`gap`** — the relay had already trimmed seqs `from`–`to` from its buffer
   when the client reconnected. Those events are lost; re-read the state you
   track from GitHub. Sent just before the `replay` it belongs to.
+- **`reset`** — the relay's storage was reset since the client last connected
+  (its storage epoch changed), so events after seq `since` in the previous
+  storage may be lost. Re-read the state you track from GitHub. Sent before the
+  `gap` and `replay` it belongs to; the replay starts over from the new storage.
 - Everything else mirrors GitHub webhooks (`pull_request`,
   `pull_request_review`, `issues`, `issue_comment`, `push`, `workflow_run`, …).
 

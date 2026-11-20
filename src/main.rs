@@ -42,6 +42,7 @@ Events from the github-relay channel arrive as <channel source=\"github-relay\" 
 Key event kinds:
 - ci_rollup: CI settled for a head SHA. \"state\" is the CI verdict (failure|pending|success, AI reviewers excluded). \"ci\" has check counts and failing names. \"reviewers\" tracks AI review bots: pending = still reviewing (wait), done = their review comments are ready to process now, failed = the bot itself errored (surface to the user; never auto-retry a bot).
 - replay: a batch of events missed while disconnected — the body is one JSON event per line. Process each line as if it had arrived live, oldest first.
+- reset: the relay's storage was reset since this client last connected, so events after seq \"since\" in the previous storage may have been lost and cannot be replayed. It arrives just before the gap and replay it belongs to; the replay starts over from the new storage. Re-read from GitHub the state you were tracking (for a PR: gh pr view, gh pr checks, and its review threads) instead of assuming nothing happened.
 - gap: the relay had already dropped seqs \"from\" through \"to\" from its buffer when this client reconnected, so those events were never delivered and cannot be replayed. It arrives just before the replay it belongs to. Re-read from GitHub the state you were tracking (for a PR: gh pr view, gh pr checks, and its review threads) instead of assuming nothing happened.
 - Other kinds mirror GitHub webhooks (pull_request, pull_request_review, pull_request_review_comment, issues, issue_comment, push, workflow_run, ...) with fields: repo, number (PR/issue), action, state, sha, ref, title, preview (truncated body), url.
 
@@ -77,17 +78,30 @@ fn cursor_file(ws_url: &str) -> PathBuf {
     state_dir.join(format!("cursor-{}.json", &hash[..16]))
 }
 
-fn load_cursor(file: &PathBuf) -> Option<i64> {
-    let text = std::fs::read_to_string(file).ok()?;
-    let parsed: Value = serde_json::from_str(&text).ok()?;
-    parsed.get("seq").and_then(Value::as_i64)
+fn load_cursor(file: &PathBuf) -> (Option<i64>, Option<String>) {
+    let parsed: Option<Value> = std::fs::read_to_string(file)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok());
+    let Some(parsed) = parsed else {
+        return (None, None);
+    };
+    let seq = parsed.get("seq").and_then(Value::as_i64);
+    let epoch = parsed
+        .get("epoch")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    (seq, epoch)
 }
 
-fn save_cursor(file: &PathBuf, seq: i64) {
+fn save_cursor(file: &PathBuf, seq: i64, epoch: Option<&str>) {
     if let Some(dir) = file.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let body = json!({ "seq": seq }).to_string();
+    let body = match epoch {
+        Some(epoch) => json!({ "seq": seq, "epoch": epoch }),
+        None => json!({ "seq": seq }),
+    }
+    .to_string();
     if let Err(e) = std::fs::write(file, body) {
         log(&format!("failed to save cursor: {e}"));
     }
@@ -240,7 +254,7 @@ async fn main() {
     }
 
     let cursor_path = cursor_file(&ws_url);
-    let mut cursor = load_cursor(&cursor_path);
+    let (mut cursor, mut epoch) = load_cursor(&cursor_path);
 
     // Outbox: every stdout line (responses + notifications) flows through here.
     let (outbox_tx, mut outbox_rx) = mpsc::unbounded_channel::<String>();
@@ -311,7 +325,7 @@ async fn main() {
 
     loop {
         // Resolve the connection URL (token exchange when not static).
-        let connect_url = match build_ws_url(&ws_url, cursor) {
+        let connect_url = match build_ws_url(&ws_url, cursor, epoch.as_deref()) {
             Ok(u) => u,
             Err(e) => fail(&format!("invalid GITHUB_RELAY_WS_URL: {e}")),
         };
@@ -353,16 +367,17 @@ async fn main() {
                 while let Some(msg) = ws.next().await {
                     match msg {
                         Ok(Message::Text(text)) => {
-                            let result = handle_frame(&text, cursor.unwrap_or(0));
+                            let result = handle_frame(&text, cursor.unwrap_or(0), epoch.as_deref());
                             if let Some(err) = result.error {
                                 log(&err);
                             }
                             for n in &result.notifications {
                                 let _ = outbox_tx.send(channel_notification(&n.content, &n.meta));
                             }
-                            if Some(result.cursor) != cursor {
+                            if Some(result.cursor) != cursor || result.epoch != epoch {
                                 cursor = Some(result.cursor);
-                                save_cursor(&cursor_path, result.cursor);
+                                epoch = result.epoch;
+                                save_cursor(&cursor_path, result.cursor, epoch.as_deref());
                             }
                         }
                         Ok(Message::Ping(p)) => {

@@ -316,6 +316,59 @@ describe('e2e: github emulator → relay → websocket', () => {
     expect(replayed.map(e => e.seq)).toEqual([first.seq])
   }, 15_000)
 
+  test('a reconnect with a stale ?epoch= gets a reset and replays from the start of the buffer', async () => {
+    const token = await deriveChannelToken(TOKEN_SECRET, CHANNEL)
+    const published = await postSignedHook('pull_request', {
+      action: 'synchronize',
+      number: 62,
+      pull_request: { number: 62, title: 'epoch', state: 'open', head: { ref: 'epoch', sha: 'e' } },
+      repository: { full_name: `${OWNER}/${REPO}` },
+    })
+    const since = published.seq as number
+
+    async function connectUntilHello(query: string): Promise<Record<string, unknown>[]> {
+      const socket = new WebSocket(`ws://127.0.0.1:${RELAY_PORT}/ws/${CHANNEL}?token=${token}&prs=62&events=pull_request&${query}`)
+      const received: Record<string, unknown>[] = []
+      socket.onmessage = message => received.push(JSON.parse(String(message.data)) as Record<string, unknown>)
+      await new Promise<void>((resolve, reject) => {
+        socket.onopen = () => resolve()
+        socket.onerror = () => reject(new Error('epoch ws connect failed'))
+      })
+      const deadline = Date.now() + 5000
+      while (!received.some(e => e.action === 'connected') && Date.now() < deadline) {
+        await Bun.sleep(100)
+      }
+      socket.close()
+      if (!received.some(e => e.action === 'connected')) {
+        throw new Error(`no hello frame within 5s for ${query}`)
+      }
+      return received
+    }
+
+    const stale = await connectUntilHello(`since=${since}&epoch=not-the-current-epoch`)
+    const batch = stale.find(e => e.event === 'relay' && e.action === 'replay')
+    expect(batch?.reset).toEqual({ epoch: 'not-the-current-epoch', since })
+    const replayed = (batch?.events as Record<string, unknown>[] | undefined) ?? []
+    expect(replayed.map(e => e.seq)).toContain(since)
+    const hello = stale.find(e => e.event === 'relay' && e.action === 'connected')
+    expect(hello?.epoch).toBeString()
+    expect(hello?.epoch).not.toBe('not-the-current-epoch')
+    expect(batch?.epoch).toBe(hello?.epoch)
+
+    const current = await connectUntilHello(`since=${since}&epoch=${hello?.epoch as string}`)
+    expect(current.some(e => 'reset' in e)).toBe(false)
+    const again = current.find(e => e.event === 'relay' && e.action === 'replay')
+    const againSeqs = ((again?.events as Record<string, unknown>[] | undefined) ?? []).map(e => e.seq)
+    expect(againSeqs).not.toContain(since)
+
+    const ahead = (hello?.seq as number) + 1000
+    const legacy = await connectUntilHello(`since=${ahead}`)
+    const legacyBatch = legacy.find(e => e.event === 'relay' && e.action === 'replay')
+    expect(legacyBatch?.reset).toEqual({ since: ahead })
+    const legacySeqs = ((legacyBatch?.events as Record<string, unknown>[] | undefined) ?? []).map(e => e.seq)
+    expect(legacySeqs).toContain(since)
+  }, 20_000)
+
   test('POST /auth exchanges a GitHub token for a working expiring WS token', async () => {
     // The relay verifies repo access against the (emulated) GitHub API.
     const authRes = await fetch(`http://127.0.0.1:${RELAY_PORT}/auth/${OWNER}--${REPO}`, {

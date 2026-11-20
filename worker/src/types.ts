@@ -93,12 +93,32 @@ export interface RelayEvent {
   events?: RelayEvent[]
   /**
    * Seqs the reconnect asked for (`since + 1` onward) that the buffer had
-   * already trimmed — present only on `relay`/`replay` frames, and the only
-   * reason such a frame is sent with an empty `events`. Those events are
-   * lost; the consumer should re-read the state it cares about from GitHub.
+   * already trimmed — present only on `relay`/`replay` frames. A gap or a
+   * `reset` is the only reason such a frame is sent with an empty `events`.
+   * Those events are lost; the consumer should re-read the state it cares
+   * about from GitHub.
    */
   gap?: {
     from: number
     to: number
+  }
+  /**
+   * Storage epoch id — present on `relay` hello and replay frames. It changes
+   * when the relay's storage is wiped and seq restarts at 1; reconnect with
+   * `?since=<seq>&epoch=<epoch>` so the relay can detect a stale cursor.
+   */
+  epoch?: string
+  /**
+   * Present only on `relay`/`replay` frames for a `?since=` reconnect whose
+   * `?epoch=` no longer matches, or whose `since` is ahead of the current
+   * storage (a reconnect without `since` gets no replay frame at all): the
+   * client's cursor belonged to storage epoch `epoch` (absent when the client
+   * sent none), which no longer exists. Events after seq `since` in it may
+   * have been lost and cannot be replayed; the replay restarts from the new
+   * storage.
+   */
+  reset?: {
+    epoch?: string
+    since: number
   }
 }
